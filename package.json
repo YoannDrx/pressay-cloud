@@ -21,6 +21,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "tsx scripts/migrate.ts",
+    "billing:configure": "tsx scripts/configure-billing.ts",
     "verify": "bun run typecheck && bun run lint && bun run format:check && bun run test"
   },
   "dependencies": {

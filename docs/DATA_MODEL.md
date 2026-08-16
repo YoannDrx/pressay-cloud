@@ -18,6 +18,11 @@ overwriting newer state. `entitlement` is the materialized server decision used
 to sign a short-lived desktop snapshot. Price identifiers live in
 `billing_product` and are never accepted from clients.
 
+The staging Stripe catalogue is configured with `bun run billing:configure`
+from environment-owned product and price IDs. Current test-mode values are
+€7.99/month and €69/year only to exercise the complete flow; production prices
+remain a launch decision and are not hard-coded into the client or migrations.
+
 ## Usage
 
 Usage is reserved before a provider request and either finalized or released.
