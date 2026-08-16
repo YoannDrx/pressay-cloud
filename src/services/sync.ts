@@ -134,6 +134,125 @@ export async function approveSyncDevice(
   }
 }
 
+export async function configureSyncRecovery(
+  authUserId: string,
+  deviceId: string,
+  codeHashBase64: string,
+  encryptedAccountKeyBase64: string,
+): Promise<void> {
+  const accountId = await assertApprovedSyncDevice(authUserId, deviceId);
+  const codeHash = decodeBoundedBase64(codeHashBase64, 32, 32);
+  const encryptedAccountKey = decodeBoundedBase64(
+    encryptedAccountKeyBase64,
+    48,
+    16_384,
+  );
+  await getSql().query(
+    `INSERT INTO account_recovery_code (account_id, code_hash, encrypted_account_key)
+    VALUES ($1, decode($2, 'hex'), decode($3, 'hex'))
+    ON CONFLICT (account_id) DO UPDATE SET
+      code_hash = EXCLUDED.code_hash,
+      encrypted_account_key = EXCLUDED.encrypted_account_key,
+      rotated_at = now()`,
+    [accountId, codeHash.toString('hex'), encryptedAccountKey.toString('hex')],
+  );
+}
+
+export async function deleteSyncRecovery(
+  authUserId: string,
+  deviceId: string,
+): Promise<void> {
+  const accountId = await assertApprovedSyncDevice(authUserId, deviceId);
+  await getSql().query(`DELETE FROM account_recovery_code WHERE account_id = $1`, [
+    accountId,
+  ]);
+}
+
+export async function beginSyncRecovery(
+  authUserId: string,
+  deviceId: string,
+  publicKeyBase64: string,
+  codeHashBase64: string,
+): Promise<{ encryptedAccountKey: string }> {
+  const publicKey = decodeBoundedBase64(publicKeyBase64, 32, 512);
+  const codeHash = decodeBoundedBase64(codeHashBase64, 32, 32);
+  const rows = await getSql().query(
+    `UPDATE pressay_device device
+    SET public_key = COALESCE(device.public_key, decode($3, 'hex'))
+    FROM pressay_account account
+    JOIN entitlement entitlement ON entitlement.account_id = account.id
+    JOIN account_recovery_code recovery ON recovery.account_id = account.id
+    WHERE device.id = $1
+      AND account.auth_user_id = $2
+      AND device.account_id = account.id
+      AND account.status = 'active'
+      AND device.revoked_at IS NULL
+      AND entitlement.tier = 'pro'
+      AND entitlement.valid_until > now()
+      AND recovery.code_hash = decode($4, 'hex')
+      AND (device.public_key IS NULL OR device.public_key = decode($3, 'hex'))
+    RETURNING encode(recovery.encrypted_account_key, 'base64') AS encrypted_account_key`,
+    [deviceId, authUserId, publicKey.toString('hex'), codeHash.toString('hex')],
+  );
+  const result = z.object({ encrypted_account_key: z.string() }).safeParse(rows[0]);
+  if (!result.success) {
+    throw new ApiError(403, 'sync_recovery_rejected', 'Sync recovery was rejected');
+  }
+  return { encryptedAccountKey: result.data.encrypted_account_key };
+}
+
+export async function completeSyncRecovery(
+  authUserId: string,
+  deviceId: string,
+  codeHashBase64: string,
+  encryptedAccountKeyBase64: string,
+): Promise<void> {
+  const codeHash = decodeBoundedBase64(codeHashBase64, 32, 32);
+  const encryptedAccountKey = decodeBoundedBase64(
+    encryptedAccountKeyBase64,
+    48,
+    16_384,
+  );
+  const rows = await getSql().query(
+    `WITH recovered AS (
+      UPDATE pressay_device device
+      SET
+        encrypted_account_key = decode($4, 'hex'),
+        approved_at = COALESCE(device.approved_at, now())
+      FROM pressay_account account
+      JOIN entitlement entitlement ON entitlement.account_id = account.id
+      JOIN account_recovery_code recovery ON recovery.account_id = account.id
+      WHERE device.id = $1
+        AND account.auth_user_id = $2
+        AND device.account_id = account.id
+        AND account.status = 'active'
+        AND device.public_key IS NOT NULL
+        AND device.revoked_at IS NULL
+        AND entitlement.tier = 'pro'
+        AND entitlement.valid_until > now()
+        AND recovery.code_hash = decode($3, 'hex')
+        AND (
+          device.approved_at IS NULL
+          OR device.encrypted_account_key = decode($4, 'hex')
+        )
+      RETURNING device.id, device.account_id
+    )
+    DELETE FROM account_recovery_code recovery
+    USING recovered
+    WHERE recovery.account_id = recovered.account_id
+    RETURNING recovered.id`,
+    [
+      deviceId,
+      authUserId,
+      codeHash.toString('hex'),
+      encryptedAccountKey.toString('hex'),
+    ],
+  );
+  if (rows.length === 0) {
+    throw new ApiError(403, 'sync_recovery_rejected', 'Sync recovery was rejected');
+  }
+}
+
 async function assertApprovedSyncDevice(
   authUserId: string,
   deviceId: string,

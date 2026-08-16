@@ -5,13 +5,21 @@ import { z } from 'zod';
 import {
   appendSyncChangesRequestSchema,
   approveSyncDeviceRequestSchema,
+  beginSyncRecoveryRequestSchema,
+  completeSyncRecoveryRequestSchema,
+  configureSyncRecoveryRequestSchema,
   enrollSyncDeviceRequestSchema,
+  syncRecoveryEnvelopeResponseSchema,
 } from '../contracts/sync.ts';
 import { requireAuthentication } from '../lib/auth-middleware.ts';
 import { ApiError } from '../lib/errors.ts';
 import {
   appendSyncChanges,
   approveSyncDevice,
+  beginSyncRecovery,
+  completeSyncRecovery,
+  configureSyncRecovery,
+  deleteSyncRecovery,
   enrollSyncDevice,
   getSyncChanges,
 } from '../services/sync.ts';
@@ -32,6 +40,60 @@ syncRoutes.post(
       input.encryptedAccountKey,
     );
     return context.json({ status }, status === 'approved' ? 201 : 202);
+  },
+);
+
+syncRoutes.put(
+  '/sync/recovery',
+  zValidator('json', configureSyncRecoveryRequestSchema, rejectInvalid),
+  async (context) => {
+    const input = context.req.valid('json');
+    await configureSyncRecovery(
+      context.get('authUserId'),
+      input.deviceId,
+      input.codeHash,
+      input.encryptedAccountKey,
+    );
+    return context.body(null, 204);
+  },
+);
+
+syncRoutes.delete('/sync/recovery', async (context) => {
+  const deviceId = parseUuid(context.req.query('deviceId') ?? '');
+  await deleteSyncRecovery(context.get('authUserId'), deviceId);
+  return context.body(null, 204);
+});
+
+syncRoutes.post(
+  '/sync/recovery/begin',
+  zValidator('json', beginSyncRecoveryRequestSchema, rejectInvalid),
+  async (context) => {
+    const input = context.req.valid('json');
+    return context.json(
+      syncRecoveryEnvelopeResponseSchema.parse(
+        await beginSyncRecovery(
+          context.get('authUserId'),
+          input.deviceId,
+          input.publicKey,
+          input.codeHash,
+        ),
+      ),
+    );
+  },
+);
+
+syncRoutes.post(
+  '/sync/recovery/complete',
+  zValidator('json', completeSyncRecoveryRequestSchema, rejectInvalid),
+  async (context) => {
+    const input = context.req.valid('json');
+    await completeSyncRecovery(
+      context.get('authUserId'),
+      input.deviceId,
+      input.codeHash,
+      input.encryptedAccountKey,
+    );
+    return context.body(null, 204);
   },
 );
 

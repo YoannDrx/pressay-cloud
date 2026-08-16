@@ -9,6 +9,10 @@ import { syncChangeInputSchema } from '../src/contracts/sync.ts';
 import {
   appendSyncChanges,
   approveSyncDevice,
+  beginSyncRecovery,
+  completeSyncRecovery,
+  configureSyncRecovery,
+  deleteSyncRecovery,
   enrollSyncDevice,
   getSyncChanges,
 } from '../src/services/sync.ts';
@@ -17,6 +21,7 @@ const accountId = '95e286b8-8bf9-4cf6-bf73-fc09361dc88c';
 const deviceId = 'a2f99183-9727-4ec5-b0db-34388737dc81';
 const objectId = '93eff87a-956a-49ec-b8d7-bf6dc28b98b0';
 const envelope = Buffer.alloc(48, 7).toString('base64');
+const codeHash = Buffer.alloc(32, 9).toString('base64');
 
 describe('E2EE sync', () => {
   beforeEach(() => query.mockReset());
@@ -66,6 +71,43 @@ describe('E2EE sync', () => {
         envelope,
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it('configures and removes a client-generated recovery envelope', async () => {
+    query.mockResolvedValueOnce([{ account_id: accountId }]).mockResolvedValueOnce([]);
+    await expect(
+      configureSyncRecovery('auth-user', deviceId, codeHash, envelope),
+    ).resolves.toBeUndefined();
+    expect(JSON.stringify(query.mock.calls)).not.toContain(codeHash);
+    expect(JSON.stringify(query.mock.calls)).not.toContain(envelope);
+
+    query.mockReset();
+    query.mockResolvedValueOnce([{ account_id: accountId }]).mockResolvedValueOnce([]);
+    await expect(deleteSyncRecovery('auth-user', deviceId)).resolves.toBeUndefined();
+  });
+
+  it('returns only the opaque recovery envelope during recovery', async () => {
+    query.mockResolvedValueOnce([{ encrypted_account_key: envelope }]);
+    await expect(
+      beginSyncRecovery(
+        'auth-user',
+        deviceId,
+        Buffer.alloc(32, 3).toString('base64'),
+        codeHash,
+      ),
+    ).resolves.toEqual({ encryptedAccountKey: envelope });
+  });
+
+  it('approves the recovered device and consumes the recovery code atomically', async () => {
+    query.mockResolvedValueOnce([{ id: deviceId }]);
+    await expect(
+      completeSyncRecovery('auth-user', deviceId, codeHash, envelope),
+    ).resolves.toBeUndefined();
+
+    query.mockResolvedValueOnce([]);
+    await expect(
+      completeSyncRecovery('auth-user', deviceId, codeHash, envelope),
+    ).rejects.toMatchObject({ code: 'sync_recovery_rejected' });
   });
 
   it('appends only an opaque envelope from an approved Pro device', async () => {
