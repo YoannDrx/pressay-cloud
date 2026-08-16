@@ -36,6 +36,20 @@ transaction and records its SHA-256 checksum. A changed migration is rejected.
 Production migrations are prepared and verified on a Neon branch before they
 are applied to the production branch.
 
+## Verification
+
+```bash
+bun run ci:source
+bun run db:migrate
+bun run db:migrate # proves checksum validation and idempotency
+```
+
+GitHub-hosted Actions are intentionally not required: this private repository is
+operated without a paid GitHub plan, and the account currently cannot allocate a
+hosted runner. GitGuardian still scans pull requests; source gates run locally
+and deployment gates run in Vercel. A self-hosted or hosted workflow can be added
+later without changing the verification commands.
+
 ## Security invariants
 
 - Never log request or response bodies.

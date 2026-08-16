@@ -17,6 +17,7 @@
     "format:check": "prettier --check .",
     "secrets:check": "secretlint '**/*' --secretlintignore .gitignore",
     "audit:dependencies": "tsx scripts/audit-runtime.ts",
+    "ci:source": "bun run verify && bun run secrets:check && bun run audit:dependencies",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "tsx scripts/migrate.ts",
