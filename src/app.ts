@@ -6,6 +6,7 @@ import { ApiError } from './lib/errors.ts';
 import { writeLog } from './lib/logger.ts';
 import { requestId } from './lib/request-id.ts';
 import { healthRoutes } from './routes/health.ts';
+import { accountRoutes } from './routes/accounts.ts';
 import type { AppEnvironment } from './types.ts';
 import { getAuth } from './auth.ts';
 
@@ -31,6 +32,7 @@ app.use(
 );
 
 app.route('/v1', healthRoutes);
+app.route('/v1', accountRoutes);
 app.on(['GET', 'POST'], '/v1/auth/*', (context) => {
   return getAuth().handler(context.req.raw);
 });
