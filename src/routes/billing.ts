@@ -1,0 +1,70 @@
+import { zValidator } from '@hono/zod-validator';
+import { Hono } from 'hono';
+
+import { billingRedirectSchema, checkoutRequestSchema } from '../contracts/billing.ts';
+import { requireAuthentication } from '../lib/auth-middleware.ts';
+import { ApiError } from '../lib/errors.ts';
+import {
+  createBillingPortal,
+  createCheckout,
+  processStripeWebhook,
+} from '../services/billing.ts';
+import type { AppEnvironment } from '../types.ts';
+
+export const billingRoutes = new Hono<AppEnvironment>();
+
+billingRoutes.use('/billing/*', requireAuthentication);
+
+billingRoutes.post(
+  '/billing/checkout',
+  zValidator('json', checkoutRequestSchema, (result) => {
+    if (!result.success)
+      throw new ApiError(422, 'invalid_request', 'Invalid billing request');
+  }),
+  async (context) => {
+    const idempotencyKey = context.req.header('idempotency-key');
+    if (!idempotencyKey || idempotencyKey.length < 16 || idempotencyKey.length > 255) {
+      throw new ApiError(
+        422,
+        'idempotency_key_required',
+        'A valid idempotency key is required',
+      );
+    }
+    return context.json(
+      billingRedirectSchema.parse({
+        url: await createCheckout(
+          context.get('authUserId'),
+          context.get('authEmail'),
+          context.req.valid('json').interval,
+          idempotencyKey,
+        ),
+      }),
+      201,
+    );
+  },
+);
+
+billingRoutes.post('/billing/portal', async (context) => {
+  return context.json(
+    billingRedirectSchema.parse({
+      url: await createBillingPortal(context.get('authUserId')),
+    }),
+    201,
+  );
+});
+
+billingRoutes.post('/webhooks/stripe', async (context) => {
+  const declaredLength = Number(context.req.header('content-length') ?? '0');
+  if (declaredLength > 1_048_576) {
+    throw new ApiError(422, 'webhook_too_large', 'Webhook payload is too large');
+  }
+  const signature = context.req.header('stripe-signature');
+  if (!signature)
+    throw new ApiError(401, 'stripe_signature_required', 'Stripe signature required');
+  const rawBody = await context.req.raw.text();
+  if (Buffer.byteLength(rawBody, 'utf8') > 1_048_576) {
+    throw new ApiError(422, 'webhook_too_large', 'Webhook payload is too large');
+  }
+  await processStripeWebhook(rawBody, signature);
+  return context.json({ received: true });
+});

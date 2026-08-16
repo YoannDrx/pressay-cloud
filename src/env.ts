@@ -22,6 +22,21 @@ const environmentSchema = z.object({
   APPLE_KEY_ID: z.string().min(1).optional(),
   APPLE_PRIVATE_KEY: z.string().min(1).optional(),
   APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1).optional(),
+  STRIPE_SECRET_KEY: z
+    .string()
+    .regex(/^(sk|rk)_(test|live)_/)
+    .optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
+  STRIPE_PRODUCT_PRO: z.string().startsWith('prod_').optional(),
+  STRIPE_PRICE_PRO_MONTHLY: z.string().startsWith('price_').optional(),
+  STRIPE_PRICE_PRO_ANNUAL: z.string().startsWith('price_').optional(),
+  STRIPE_CHECKOUT_SUCCESS_URL: z
+    .url()
+    .default('https://press-say.app/account?checkout=success'),
+  STRIPE_CHECKOUT_CANCEL_URL: z
+    .url()
+    .default('https://press-say.app/pricing?checkout=cancelled'),
+  STRIPE_PORTAL_RETURN_URL: z.url().default('https://press-say.app/account'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 
