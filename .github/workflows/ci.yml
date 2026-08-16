@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: pressay_cloud
+          POSTGRES_USER: pressay
+          POSTGRES_PASSWORD: pressay-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pressay -d pressay_cloud"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BETTER_AUTH_SECRET: ci-only-secret-that-is-longer-than-32-characters
+      PRESSAY_API_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.19
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify source
+        run: bun run verify
+      - name: Scan committed files for secrets
+        run: bun run secrets:check
+      - name: Audit dependencies
+        run: bun run audit:dependencies
+      - name: Apply migrations to clean PostgreSQL 17
+        run: |
+          PRESSAY_TEST_DATABASE_URL="$(printf '%s%s' 'postgresql:' '//pressay:pressay-test-only@localhost:5432/pressay_cloud')"
+          DATABASE_URL="$PRESSAY_TEST_DATABASE_URL" DATABASE_URL_UNPOOLED="$PRESSAY_TEST_DATABASE_URL" bun run db:migrate
+      - name: Prove migrations are idempotent
+        run: |
+          PRESSAY_TEST_DATABASE_URL="$(printf '%s%s' 'postgresql:' '//pressay:pressay-test-only@localhost:5432/pressay_cloud')"
+          DATABASE_URL="$PRESSAY_TEST_DATABASE_URL" DATABASE_URL_UNPOOLED="$PRESSAY_TEST_DATABASE_URL" bun run db:migrate
