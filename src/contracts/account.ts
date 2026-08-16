@@ -71,6 +71,18 @@ export const usageSnapshotSchema = z.strictObject({
   }),
 });
 
+export const signedEntitlementSnapshotSchema = z.strictObject({
+  token: z.string().min(64),
+  keyId: z.string(),
+  expiresAt: isoDateTime,
+});
+
+export const entitlementResponseSchema = z.strictObject({
+  entitlement: entitlementSchema,
+  usage: usageSnapshotSchema,
+  signedSnapshot: signedEntitlementSnapshotSchema,
+});
+
 export type BootstrapAccountRequest = z.infer<typeof bootstrapAccountRequestSchema>;
 export type Entitlement = z.infer<typeof entitlementSchema>;
 export type Device = z.infer<typeof deviceSchema>;

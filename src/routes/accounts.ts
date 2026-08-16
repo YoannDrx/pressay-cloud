@@ -6,11 +6,13 @@ import {
   bootstrapAccountRequestSchema,
   bootstrapAccountResponseSchema,
   deviceListResponseSchema,
+  entitlementResponseSchema,
 } from '../contracts/account.ts';
 import { getAuth } from '../auth.ts';
 import { requireAuthentication } from '../lib/auth-middleware.ts';
 import { ApiError } from '../lib/errors.ts';
 import {
+  assertActiveDevice,
   bootstrapAccount,
   getMe,
   getUsage,
@@ -18,6 +20,10 @@ import {
   requestAccountDeletion,
   revokeDevice,
 } from '../services/accounts.ts';
+import {
+  getEntitlementPublicJwk,
+  signEntitlementSnapshot,
+} from '../services/entitlements.ts';
 import type { AppEnvironment } from '../types.ts';
 
 export const accountRoutes = new Hono<AppEnvironment>();
@@ -79,8 +85,26 @@ accountRoutes.delete('/devices/:id', async (context) => {
 });
 
 accountRoutes.get('/entitlements', async (context) => {
+  const deviceId = zUuid(context.req.header('x-device-id') ?? '');
   const me = await getMe(context.get('authUserId'), context.get('authEmail'));
-  return context.json({ entitlement: me.entitlement });
+  await assertActiveDevice(context.get('authUserId'), deviceId);
+  const usage = await getUsage(context.get('authUserId'));
+  return context.json(
+    entitlementResponseSchema.parse({
+      entitlement: me.entitlement,
+      usage,
+      signedSnapshot: await signEntitlementSnapshot({
+        accountId: me.accountId,
+        deviceId,
+        entitlement: me.entitlement,
+        usage,
+      }),
+    }),
+  );
+});
+
+accountRoutes.get('/entitlements/jwks', (context) => {
+  return context.json({ keys: [getEntitlementPublicJwk()] });
 });
 
 accountRoutes.get('/usage', async (context) => {

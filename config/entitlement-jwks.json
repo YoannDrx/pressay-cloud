@@ -1,0 +1,12 @@
+{
+  "keys": [
+    {
+      "crv": "Ed25519",
+      "x": "gj3woVSEMEiNemiZKdA28oEvMrLL9iQPbiMPr_B-plQ",
+      "kty": "OKP",
+      "kid": "pressay-entitlement-2026-01",
+      "alg": "EdDSA",
+      "use": "sig"
+    }
+  ]
+}

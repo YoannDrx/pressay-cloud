@@ -223,6 +223,21 @@ export async function revokeDevice(
     throw new ApiError(404, 'device_not_found', 'Device not found');
 }
 
+export async function assertActiveDevice(
+  authUserId: string,
+  deviceId: string,
+): Promise<void> {
+  const rows = await getSql().query(
+    `SELECT d.id
+    FROM pressay_device d
+    JOIN pressay_account a ON a.id = d.account_id
+    WHERE d.id = $1 AND a.auth_user_id = $2 AND d.revoked_at IS NULL`,
+    [deviceId, authUserId],
+  );
+  if (rows.length === 0)
+    throw new ApiError(403, 'device_not_active', 'Device is not active');
+}
+
 export async function getUsage(authUserId: string): Promise<UsageSnapshot> {
   const rows = await getSql().query(
     `SELECT
