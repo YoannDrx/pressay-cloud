@@ -8,6 +8,7 @@ import { requestId } from './lib/request-id.ts';
 import { healthRoutes } from './routes/health.ts';
 import { accountRoutes } from './routes/accounts.ts';
 import { billingRoutes } from './routes/billing.ts';
+import { cloudRoutes } from './routes/cloud.ts';
 import { syncRoutes } from './routes/sync.ts';
 import type { AppEnvironment } from './types.ts';
 import { getAuth } from './auth.ts';
@@ -27,7 +28,7 @@ app.use(
     },
     allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Device-Id'],
     exposeHeaders: ['Content-Length', 'X-Request-Id'],
-    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
     maxAge: 600,
   }),
@@ -36,6 +37,7 @@ app.use(
 app.route('/v1', healthRoutes);
 app.route('/v1', accountRoutes);
 app.route('/v1', billingRoutes);
+app.route('/v1', cloudRoutes);
 app.route('/v1', syncRoutes);
 app.on(['GET', 'POST'], '/v1/auth/*', (context) => {
   return getAuth().handler(context.req.raw);

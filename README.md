@@ -6,6 +6,21 @@ end-to-end encrypted settings sync.
 Pressay Cloud never persists dictation text, selected text, prompts, audio or
 BYOK credentials. Those fields are also forbidden in application logs.
 
+Cloud processing is opt-in per request. Both endpoints require an authenticated
+Pro account, an active device, a unique `Idempotency-Key` header and an explicit
+content-transfer acknowledgement:
+
+- `POST /v1/cloud/transformations` uses the server alias
+  `pressay-transform-v1` with response storage disabled.
+- `POST /v1/cloud/transcriptions` accepts validated 16-bit PCM WAV audio up to
+  4 MB and 180 seconds. The stricter file limit stays below Vercel's 4.5 MB
+  request limit; longer recordings remain local.
+
+Quota is reserved and claimed atomically before a provider call. The request
+hash detects idempotency-key misuse without retaining the request body. A failed
+provider call releases the reservation; a completed or in-flight key is never
+sent to the provider twice.
+
 ## Runtime
 
 - Node.js 22
@@ -57,6 +72,8 @@ later without changing the verification commands.
 - Never accept Stripe Price IDs from a client.
 - Verify Stripe and Apple webhook signatures from their unmodified request body.
 - Require an idempotency key before every billable operation.
+- Require an explicit transfer acknowledgement before Cloud content leaves the
+  device.
 - Store only opaque encrypted sync envelopes; the service never receives the
   account encryption key.
 

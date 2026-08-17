@@ -22,6 +22,22 @@ const environmentSchema = z.object({
   APPLE_KEY_ID: z.string().min(1).optional(),
   APPLE_PRIVATE_KEY: z.string().min(1).optional(),
   APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1).optional(),
+  OPENAI_API_KEY: z.string().startsWith('sk-').optional(),
+  OPENAI_BASE_URL: z.url().default('https://api.openai.com/v1'),
+  OPENAI_TRANSFORM_MODEL: z.string().default('gpt-5-mini-2025-08-07'),
+  OPENAI_TRANSCRIPTION_MODEL: z.string().default('gpt-4o-mini-transcribe-2025-12-15'),
+  OPENAI_TRANSFORM_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(120_000)
+    .default(45_000),
+  OPENAI_TRANSCRIPTION_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(180_000)
+    .default(120_000),
   STRIPE_SECRET_KEY: z
     .string()
     .regex(/^(sk|rk)_(test|live)_/)

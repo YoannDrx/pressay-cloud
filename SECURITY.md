@@ -19,6 +19,12 @@ for the duration of the upstream request. Error reporting is restricted to an
 opaque operation ID, sizes, durations, provider status classes and Pressay error
 codes.
 
+Transformations set OpenAI `store: false` and request in-memory prompt-cache
+retention. Audio is sent directly to the transcription endpoint and is never
+uploaded through the Files API. Production copy must not claim provider-level
+Zero Data Retention until it has been contractually enabled and verified for the
+OpenAI project.
+
 ## Secrets
 
 Production secrets live in Vercel environment variables scoped to the smallest
