@@ -62,3 +62,24 @@ by the desktop application.
 Rotation is additive: publish and embed the new public key, deploy the server so
 it signs with the new `kid`, wait at least 72 hours (the maximum offline grace),
 then remove the old public key. Private keys are never stored in GitHub.
+
+## App Store billing
+
+The Mac App Store build passes the Pressay account UUID as StoreKit's
+`appAccountToken`. `POST /v1/billing/restore-app-store` accepts only a signed
+StoreKit 2 transaction whose token matches the authenticated account, refreshes
+the subscription through the App Store Server API, and verifies every returned
+JWS. `POST /v1/webhooks/apple` accepts only App Store Server Notifications V2.
+
+Apple signatures are validated by Apple's official Node library with online
+certificate checks and the three public Apple roots in
+`config/apple-root-ca.pem`. Production verification also pins the App Apple ID
+and the Store bundle ID. The App Store Connect API private key is Base64-encoded
+only for transport in the `APP_STORE_PRIVATE_KEY_BASE64` Vercel secret; it is
+never committed.
+
+`recompute_pressay_entitlement` selects the longest currently valid Stripe or
+App Store subscription, preserves a longer support grant, and increments the
+signed entitlement revision only when effective rights change. Refunds,
+revocations and out-of-order provider events therefore cannot silently erase a
+different current entitlement.

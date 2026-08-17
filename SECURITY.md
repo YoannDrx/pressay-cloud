@@ -32,6 +32,12 @@ required environment. `.env.local` is ignored. Stripe uses a restricted API key;
 provider webhook secrets and entitlement signing keys are independent and
 rotatable.
 
+App Store Connect uses a dedicated In-App Purchase key, separate from Sign in
+with Apple. StoreKit transactions and Notifications V2 are accepted only after
+JWS chain, bundle ID, environment and production App Apple ID verification.
+Apple's public root certificates are committed for deterministic trust pinning;
+the In-App Purchase private key remains a Vercel secret.
+
 ## Dependency reporting
 
 Security updates are handled through reviewed pull requests. Production releases

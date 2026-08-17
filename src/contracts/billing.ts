@@ -8,6 +8,14 @@ export const billingRedirectSchema = z.strictObject({
   url: z.url(),
 });
 
+export const restoreAppStoreRequestSchema = z.strictObject({
+  signedTransaction: z.string().min(64).max(250_000),
+});
+
+export const restoreAppStoreResponseSchema = z.strictObject({
+  restored: z.boolean(),
+});
+
 export const billingStatusSchema = z.strictObject({
   provider: z.enum(['stripe', 'app_store']).nullable(),
   interval: z.enum(['month', 'year']).nullable(),

@@ -176,7 +176,6 @@ async function applyStripeSubscription(
   }
 
   const status = mapStripeStatus(subscription.status);
-  const active = ['trialing', 'active', 'past_due'].includes(status);
   const periodStart = item.current_period_start;
   const periodEnd = item.current_period_end;
   await getSql().query(
@@ -216,24 +215,13 @@ async function applyStripeSubscription(
         updated_at = now()
       WHERE billing_subscription.provider_event_occurred_at <= EXCLUDED.provider_event_occurred_at
       RETURNING account_id
-    ), entitlement_update AS (
-      UPDATE entitlement e
-      SET
-        tier = CASE WHEN $15 THEN 'pro' ELSE 'free' END,
-        source = CASE WHEN $15 THEN 'stripe' ELSE 'none' END,
-        valid_from = CASE WHEN $15 THEN to_timestamp($12) ELSE now() END,
-        valid_until = CASE WHEN $15 THEN to_timestamp($13) ELSE NULL END,
-        offline_grace_until = CASE WHEN $15 THEN to_timestamp($13) + interval '72 hours' ELSE NULL END,
-        revision = e.revision + 1,
-        updated_at = now()
-      FROM subscription_upsert s
-      WHERE e.account_id = s.account_id
-        AND (e.source IN ('none', 'trial', 'stripe') OR $15)
-      RETURNING e.account_id
+    ), entitlement_refresh AS (
+      SELECT recompute_pressay_entitlement(account_id) AS changed
+      FROM subscription_upsert
     )
     UPDATE provider_event pe
     SET
-      state = CASE WHEN EXISTS (SELECT 1 FROM subscription_upsert) THEN 'applied' ELSE 'ignored' END,
+      state = CASE WHEN EXISTS (SELECT 1 FROM entitlement_refresh) THEN 'applied' ELSE 'ignored' END,
       processed_at = now()
     WHERE pe.provider = 'stripe'
       AND pe.provider_event_id = $1
@@ -253,7 +241,6 @@ async function applyStripeSubscription(
       periodStart,
       periodEnd,
       subscription.cancel_at_period_end,
-      active,
     ],
   );
 }
