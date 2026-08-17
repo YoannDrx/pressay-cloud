@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import OpenAI from 'openai';
+import { OpenAI } from 'openai';
 
 import type { CloudTransformationRequest } from '../contracts/cloud.ts';
 import { getEnvironment, requireEnvironmentValue } from '../env.ts';
