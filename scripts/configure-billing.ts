@@ -1,6 +1,6 @@
 import pg from 'pg';
 
-import { getEnvironment, requireEnvironmentValue } from '../src/env.ts';
+import { getEnvironment, requireEnvironmentValue } from '../src/env.js';
 
 const environment = getEnvironment();
 const pool = new pg.Pool({

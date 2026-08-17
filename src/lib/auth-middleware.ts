@@ -1,8 +1,8 @@
 import { createMiddleware } from 'hono/factory';
 
-import { getAuth } from '../auth.ts';
-import type { AppEnvironment } from '../types.ts';
-import { ApiError } from './errors.ts';
+import { getAuth } from '../auth.js';
+import type { AppEnvironment } from '../types.js';
+import { ApiError } from './errors.js';
 
 export const requireAuthentication = createMiddleware<AppEnvironment>(
   async (context, next) => {

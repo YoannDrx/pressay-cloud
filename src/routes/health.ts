@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 
-import { databaseIsReady } from '../db/health.ts';
-import { healthResponseSchema, readyResponseSchema } from '../contracts/health.ts';
+import { databaseIsReady } from '../db/health.js';
+import { healthResponseSchema, readyResponseSchema } from '../contracts/health.js';
 
 export const healthRoutes = new Hono()
   .get('/health', (context) => {

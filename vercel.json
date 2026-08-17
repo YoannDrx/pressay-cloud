@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "bunx bun@1.2.19 install --frozen-lockfile",
   "framework": "hono",
   "regions": ["fra1"],
   "functions": {
@@ -7,6 +8,12 @@
       "maxDuration": 60
     }
   },
+  "crons": [
+    {
+      "path": "/v1/internal/jobs/account-deletions",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

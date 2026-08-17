@@ -7,16 +7,16 @@ import type {
   Device,
   Entitlement,
   UsageSnapshot,
-} from '../contracts/account.ts';
+} from '../contracts/account.js';
 import {
   deviceListResponseSchema,
   entitlementSchema,
   meResponseSchema,
   usageSnapshotSchema,
-} from '../contracts/account.ts';
-import { getSql } from '../db/client.ts';
-import { getEnvironment, requireEnvironmentValue } from '../env.ts';
-import { ApiError } from '../lib/errors.ts';
+} from '../contracts/account.js';
+import { getSql } from '../db/client.js';
+import { getEnvironment, requireEnvironmentValue } from '../env.js';
+import { ApiError } from '../lib/errors.js';
 
 const bootstrapRowSchema = z.object({
   account_id: z.uuid(),

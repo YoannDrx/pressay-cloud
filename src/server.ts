@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 
-import app from './app.ts';
+import app from './app.js';
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
 

@@ -2,9 +2,9 @@ import pg from 'pg';
 import { betterAuth } from 'better-auth';
 import { bearer, magicLink } from 'better-auth/plugins';
 
-import { generateAppleClientSecret } from './auth/apple.ts';
-import { sendMagicLinkEmail } from './email/magic-link.ts';
-import { getEnvironment, requireEnvironmentValue } from './env.ts';
+import { generateAppleClientSecret } from './auth/apple.js';
+import { sendMagicLinkEmail } from './email/magic-link.js';
+import { getEnvironment, requireEnvironmentValue } from './env.js';
 
 function requireCompletePair(
   first: string | undefined,

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { getSql } from '../db/client.ts';
-import { ApiError } from '../lib/errors.ts';
+import { getSql } from '../db/client.js';
+import { ApiError } from '../lib/errors.js';
 
 export type UsageKind = 'cloud_transcription' | 'cloud_transformation';
 

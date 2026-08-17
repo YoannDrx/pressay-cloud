@@ -6,19 +6,19 @@ import {
   checkoutRequestSchema,
   restoreAppStoreRequestSchema,
   restoreAppStoreResponseSchema,
-} from '../contracts/billing.ts';
-import { requireAuthentication } from '../lib/auth-middleware.ts';
-import { ApiError } from '../lib/errors.ts';
+} from '../contracts/billing.js';
+import { requireAuthentication } from '../lib/auth-middleware.js';
+import { ApiError } from '../lib/errors.js';
 import {
   createBillingPortal,
   createCheckout,
   processStripeWebhook,
-} from '../services/billing.ts';
+} from '../services/billing.js';
 import {
   processAppleWebhook,
   restoreAppStorePurchase,
-} from '../services/apple-billing.ts';
-import type { AppEnvironment } from '../types.ts';
+} from '../services/apple-billing.js';
+import type { AppEnvironment } from '../types.js';
 
 export const billingRoutes = new Hono<AppEnvironment>();
 

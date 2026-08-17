@@ -8,6 +8,30 @@ const environmentSchema = z.object({
   PRESSAY_API_URL: z.url().default('http://localhost:3000'),
   BETTER_AUTH_SECRET: z.string().min(32).optional(),
   DEVICE_IDENTIFIER_HMAC_SECRET: z.string().min(32).optional(),
+  RATE_LIMIT_HMAC_SECRET: z.string().min(32).optional(),
+  CRON_SECRET: z.string().min(32).optional(),
+  PRESSAY_CLOUD_PROCESSING_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  PRESSAY_CLOUD_ACCOUNT_RATE_PER_MINUTE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(10_000)
+    .default(60),
+  PRESSAY_CLOUD_DEVICE_RATE_PER_MINUTE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(10_000)
+    .default(30),
+  PRESSAY_CLOUD_IP_RATE_PER_MINUTE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(10_000)
+    .default(120),
   ENTITLEMENT_SIGNING_PRIVATE_KEY: z.string().min(1).optional(),
   ENTITLEMENT_SIGNING_KEY_ID: z
     .string()

@@ -31,10 +31,16 @@ envelopes. Cloud text and audio processing is stateless.
 
 ## Deployment
 
-- Pull requests receive Vercel previews with isolated credentials.
+- The new backend is validated manually in the isolated Vercel project
+  `pressay-cloud-staging`; it does not own `api.press-say.app`.
+- Git auto-deploy is intentionally disconnected until the stacked backend pull
+  requests are merged and Preview has its own isolated credentials.
 - SQL is tested on a Neon child branch before production application.
 - Production deploys use `fra1` and a pooled Neon URL in the same EU region.
 - Migrations use the direct URL and run as a separate release operation.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the staging boundary, required gates and
+domain cutover procedure.
 
 ## Cloud processing aliases
 

@@ -11,7 +11,7 @@ import {
   type Status,
 } from '@apple/app-store-server-library';
 
-import { getEnvironment, requireEnvironmentValue } from '../env.ts';
+import { getEnvironment, requireEnvironmentValue } from '../env.js';
 
 interface AppleRuntime {
   verifier: SignedDataVerifier;

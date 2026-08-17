@@ -7,10 +7,10 @@ import {
   bootstrapAccountResponseSchema,
   deviceListResponseSchema,
   entitlementResponseSchema,
-} from '../contracts/account.ts';
-import { getAuth } from '../auth.ts';
-import { requireAuthentication } from '../lib/auth-middleware.ts';
-import { ApiError } from '../lib/errors.ts';
+} from '../contracts/account.js';
+import { getAuth } from '../auth.js';
+import { requireAuthentication } from '../lib/auth-middleware.js';
+import { ApiError } from '../lib/errors.js';
 import {
   assertActiveDevice,
   bootstrapAccount,
@@ -19,12 +19,12 @@ import {
   listDevices,
   requestAccountDeletion,
   revokeDevice,
-} from '../services/accounts.ts';
+} from '../services/accounts.js';
 import {
   getEntitlementPublicJwk,
   signEntitlementSnapshot,
-} from '../services/entitlements.ts';
-import type { AppEnvironment } from '../types.ts';
+} from '../services/entitlements.js';
+import type { AppEnvironment } from '../types.js';
 
 export const accountRoutes = new Hono<AppEnvironment>();
 

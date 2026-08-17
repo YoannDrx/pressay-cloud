@@ -4,7 +4,7 @@ import { basename, resolve } from 'node:path';
 
 import pg from 'pg';
 
-import { getEnvironment } from '../src/env.ts';
+import { getEnvironment } from '../src/env.js';
 
 const migrationsDirectory = resolve(import.meta.dirname, '../migrations');
 const advisoryLockId = 6_072_025_081_701;

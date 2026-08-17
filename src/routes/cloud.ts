@@ -6,15 +6,20 @@ import {
   cloudTransformationRequestSchema,
   cloudTransformationResponseSchema,
   cloudTranscriptionResponseSchema,
-} from '../contracts/cloud.ts';
-import { requireAuthentication } from '../lib/auth-middleware.ts';
-import { ApiError } from '../lib/errors.ts';
-import { cloudAudioLimits } from '../lib/wav.ts';
+} from '../contracts/cloud.js';
+import { requireAuthentication } from '../lib/auth-middleware.js';
+import { getClientIp } from '../lib/client-ip.js';
+import { ApiError } from '../lib/errors.js';
+import { cloudAudioLimits } from '../lib/wav.js';
 import {
   processCloudTransformation,
   processCloudTranscription,
-} from '../services/cloud-processing.ts';
-import type { AppEnvironment } from '../types.ts';
+} from '../services/cloud-processing.js';
+import {
+  assertCloudProcessingEnabled,
+  enforceCloudRateLimits,
+} from '../services/rate-limits.js';
+import type { AppEnvironment } from '../types.js';
 
 const idempotencyKeySchema = z
   .string()
@@ -41,10 +46,17 @@ cloudRoutes.post(
     }
   }),
   async (context) => {
+    assertCloudProcessingEnabled();
     const idempotencyKey = requireIdempotencyKey(context.req.header('idempotency-key'));
+    const input = context.req.valid('json');
+    await enforceCloudRateLimits(
+      context.get('authUserId'),
+      input.deviceId,
+      getClientIp(context),
+    );
     const result = await processCloudTransformation(
       context.get('authUserId'),
-      context.req.valid('json'),
+      input,
       idempotencyKey,
     );
     return context.json(cloudTransformationResponseSchema.parse(result));
@@ -52,6 +64,7 @@ cloudRoutes.post(
 );
 
 cloudRoutes.post('/cloud/transcriptions', async (context) => {
+  assertCloudProcessingEnabled();
   const idempotencyKey = requireIdempotencyKey(context.req.header('idempotency-key'));
   const contentLength = Number(context.req.header('content-length') ?? 0);
   if (contentLength > 4_400_000) {
@@ -71,6 +84,11 @@ cloudRoutes.post('/cloud/transcriptions', async (context) => {
   if (!fields.success || !(file instanceof File)) {
     throw new ApiError(422, 'invalid_request', 'Invalid transcription request');
   }
+  await enforceCloudRateLimits(
+    context.get('authUserId'),
+    fields.data.deviceId,
+    getClientIp(context),
+  );
   if (file.size > cloudAudioLimits.bytes || file.size === 0) {
     throw new ApiError(422, 'invalid_audio', 'Audio must be a WAV file under 4 MB');
   }

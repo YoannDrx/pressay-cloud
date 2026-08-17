@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 
-import { getEnvironment, requireEnvironmentValue } from '../env.ts';
+import { getEnvironment, requireEnvironmentValue } from '../env.js';
 
 let stripeClient: Stripe | undefined;
 

@@ -2,8 +2,8 @@ import { createPublicKey } from 'node:crypto';
 
 import { importPKCS8, SignJWT, type JWK } from 'jose';
 
-import type { Entitlement, UsageSnapshot } from '../contracts/account.ts';
-import { getEnvironment, requireEnvironmentValue } from '../env.ts';
+import type { Entitlement, UsageSnapshot } from '../contracts/account.js';
+import { getEnvironment, requireEnvironmentValue } from '../env.js';
 
 const maxOfflineGraceSeconds = 72 * 60 * 60;
 

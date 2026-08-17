@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { Resend } from 'resend';
 
-import { getEnvironment, requireEnvironmentValue } from '../env.ts';
+import { getEnvironment, requireEnvironmentValue } from '../env.js';
 
 function escapeHtml(value: string): string {
   return value
