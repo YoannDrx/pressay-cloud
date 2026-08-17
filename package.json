@@ -23,6 +23,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "billing:configure": "tsx scripts/configure-billing.ts",
     "billing:configure:app-store": "tsx scripts/configure-app-store-billing.ts",
+    "jobs:account-deletions": "tsx scripts/run-account-deletions.ts",
     "verify": "bun run typecheck && bun run lint && bun run format:check && bun run test"
   },
   "dependencies": {

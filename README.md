@@ -21,6 +21,10 @@ hash detects idempotency-key misuse without retaining the request body. A failed
 provider call releases the reservation; a completed or in-flight key is never
 sent to the provider twice.
 
+Cloud processing also has a server-side kill switch and independent per-minute
+limits for account, device and IP. Rate-limit identifiers are HMAC-hashed before
+they reach Postgres, and expired buckets are removed by daily maintenance.
+
 App Store purchases use StoreKit 2 signed transactions. The restore endpoint
 requires the transaction `appAccountToken` to equal the authenticated Pressay
 account UUID, then refreshes status through the App Store Server API. Version 2
@@ -50,6 +54,31 @@ bun run dev
 
 The API is served on `http://localhost:3000`. `GET /v1/health` is process-only;
 `GET /v1/ready` verifies the database connection.
+
+Set `PRESSAY_CLOUD_PROCESSING_ENABLED=true` only after provider retention,
+budget alerts and the deployment environment have passed the release gate. It
+defaults to `false`.
+
+## Operational jobs
+
+`DELETE /v1/me` immediately revokes Cloud access, removes E2EE sync material and
+queues deletion of the remaining provider and local identity records. The daily
+Vercel cron calls `GET /v1/internal/jobs/account-deletions`; Vercel authenticates
+that request with `Authorization: Bearer <CRON_SECRET>`. Use an independent,
+random `CRON_SECRET` of at least 32 characters. The worker claims jobs with
+`FOR UPDATE SKIP LOCKED`, retries provider failures with bounded backoff and
+never persists provider error messages.
+
+The Hobby-compatible schedule runs once daily, so final provider deletion may
+take up to 24 hours after access and synchronized material have been revoked.
+For manual recovery from an operational incident, run:
+
+```bash
+bun run jobs:account-deletions
+```
+
+The command emits counts and event names only; it never logs account identifiers
+or provider payloads.
 
 ## Database changes
 
@@ -84,6 +113,8 @@ later without changing the verification commands.
 - Require an idempotency key before every billable operation.
 - Require an explicit transfer acknowledgement before Cloud content leaves the
   device.
+- Keep Cloud processing disabled by default and hash all rate-limit identifiers.
+- Authenticate every maintenance invocation with Vercel's `CRON_SECRET`.
 - Store only opaque encrypted sync envelopes; the service never receives the
   account encryption key.
 

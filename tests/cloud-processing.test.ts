@@ -5,6 +5,7 @@ const claimUsage = vi.hoisted(() => vi.fn());
 const settleUsage = vi.hoisted(() => vi.fn());
 const transformWithOpenAI = vi.hoisted(() => vi.fn());
 const transcribeWithOpenAI = vi.hoisted(() => vi.fn());
+const assertCloudProcessingEnabled = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/services/usage-reservations.ts', () => ({
   reserveUsage,
@@ -14,6 +15,9 @@ vi.mock('../src/services/usage-reservations.ts', () => ({
 vi.mock('../src/services/openai-provider.ts', () => ({
   transformWithOpenAI,
   transcribeWithOpenAI,
+}));
+vi.mock('../src/services/rate-limits.ts', () => ({
+  assertCloudProcessingEnabled,
 }));
 
 import {

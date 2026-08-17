@@ -4,6 +4,7 @@ import type { CloudTransformationRequest } from '../contracts/cloud.ts';
 import { ApiError } from '../lib/errors.ts';
 import { parseCloudWav } from '../lib/wav.ts';
 import { transformWithOpenAI, transcribeWithOpenAI } from './openai-provider.ts';
+import { assertCloudProcessingEnabled } from './rate-limits.ts';
 import { claimUsage, reserveUsage, settleUsage } from './usage-reservations.ts';
 
 const TRANSFORM_ALIAS = 'pressay-transform-v1' as const;
@@ -45,6 +46,7 @@ export async function processCloudTransformation(
   input: CloudTransformationRequest,
   idempotencyKey: string,
 ) {
+  assertCloudProcessingEnabled();
   const requestHash = contentHash([
     input.deviceId,
     input.instruction,
@@ -88,6 +90,7 @@ export async function processCloudTranscription(
   language: string | undefined,
   idempotencyKey: string,
 ) {
+  assertCloudProcessingEnabled();
   const metadata = parseCloudWav(audio);
   const requestHash = contentHash([deviceId, language ?? '', audio]);
   const billedSeconds = Math.max(1, Math.ceil(metadata.durationSeconds));

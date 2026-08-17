@@ -6,6 +6,7 @@ import { ApiError } from './lib/errors.ts';
 import { writeLog } from './lib/logger.ts';
 import { requestId } from './lib/request-id.ts';
 import { healthRoutes } from './routes/health.ts';
+import { internalRoutes } from './routes/internal.ts';
 import { accountRoutes } from './routes/accounts.ts';
 import { billingRoutes } from './routes/billing.ts';
 import { cloudRoutes } from './routes/cloud.ts';
@@ -35,6 +36,7 @@ app.use(
 );
 
 app.route('/v1', healthRoutes);
+app.route('/v1', internalRoutes);
 app.route('/v1', accountRoutes);
 app.route('/v1', billingRoutes);
 app.route('/v1', cloudRoutes);
