@@ -118,4 +118,5 @@ later without changing the verification commands.
 - Store only opaque encrypted sync envelopes; the service never receives the
   account encryption key.
 
-See [SECURITY.md](SECURITY.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+See [SECURITY.md](SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
