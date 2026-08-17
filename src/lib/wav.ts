@@ -1,4 +1,4 @@
-import { ApiError } from './errors.ts';
+import { ApiError } from './errors.js';
 
 export interface WavMetadata {
   channels: number;

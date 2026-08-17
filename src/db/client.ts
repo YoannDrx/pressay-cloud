@@ -1,6 +1,6 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
-import { getEnvironment } from '../env.ts';
+import { getEnvironment } from '../env.js';
 
 let sqlClient: NeonQueryFunction<false, false> | undefined;
 

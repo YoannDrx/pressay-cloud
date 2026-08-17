@@ -6,20 +6,20 @@ import {
   cloudTransformationRequestSchema,
   cloudTransformationResponseSchema,
   cloudTranscriptionResponseSchema,
-} from '../contracts/cloud.ts';
-import { requireAuthentication } from '../lib/auth-middleware.ts';
-import { getClientIp } from '../lib/client-ip.ts';
-import { ApiError } from '../lib/errors.ts';
-import { cloudAudioLimits } from '../lib/wav.ts';
+} from '../contracts/cloud.js';
+import { requireAuthentication } from '../lib/auth-middleware.js';
+import { getClientIp } from '../lib/client-ip.js';
+import { ApiError } from '../lib/errors.js';
+import { cloudAudioLimits } from '../lib/wav.js';
 import {
   processCloudTransformation,
   processCloudTranscription,
-} from '../services/cloud-processing.ts';
+} from '../services/cloud-processing.js';
 import {
   assertCloudProcessingEnabled,
   enforceCloudRateLimits,
-} from '../services/rate-limits.ts';
-import type { AppEnvironment } from '../types.ts';
+} from '../services/rate-limits.js';
+import type { AppEnvironment } from '../types.js';
 
 const idempotencyKeySchema = z
   .string()

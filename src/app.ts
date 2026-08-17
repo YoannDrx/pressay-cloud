@@ -2,17 +2,17 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 
-import { ApiError } from './lib/errors.ts';
-import { writeLog } from './lib/logger.ts';
-import { requestId } from './lib/request-id.ts';
-import { healthRoutes } from './routes/health.ts';
-import { internalRoutes } from './routes/internal.ts';
-import { accountRoutes } from './routes/accounts.ts';
-import { billingRoutes } from './routes/billing.ts';
-import { cloudRoutes } from './routes/cloud.ts';
-import { syncRoutes } from './routes/sync.ts';
-import type { AppEnvironment } from './types.ts';
-import { getAuth } from './auth.ts';
+import { ApiError } from './lib/errors.js';
+import { writeLog } from './lib/logger.js';
+import { requestId } from './lib/request-id.js';
+import { healthRoutes } from './routes/health.js';
+import { internalRoutes } from './routes/internal.js';
+import { accountRoutes } from './routes/accounts.js';
+import { billingRoutes } from './routes/billing.js';
+import { cloudRoutes } from './routes/cloud.js';
+import { syncRoutes } from './routes/sync.js';
+import type { AppEnvironment } from './types.js';
+import { getAuth } from './auth.js';
 
 const app = new Hono<AppEnvironment>();
 

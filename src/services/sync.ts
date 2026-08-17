@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-import type { SyncChangeInput } from '../contracts/sync.ts';
-import { syncChangesResponseSchema } from '../contracts/sync.ts';
-import { getSql } from '../db/client.ts';
-import { ApiError } from '../lib/errors.ts';
+import type { SyncChangeInput } from '../contracts/sync.js';
+import { syncChangesResponseSchema } from '../contracts/sync.js';
+import { getSql } from '../db/client.js';
+import { ApiError } from '../lib/errors.js';
 
 const syncRowSchema = z.object({
   sequence_id: z.coerce.number().int().positive(),

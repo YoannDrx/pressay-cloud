@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import type { CloudTransformationRequest } from '../contracts/cloud.ts';
-import { ApiError } from '../lib/errors.ts';
-import { parseCloudWav } from '../lib/wav.ts';
-import { transformWithOpenAI, transcribeWithOpenAI } from './openai-provider.ts';
-import { assertCloudProcessingEnabled } from './rate-limits.ts';
-import { claimUsage, reserveUsage, settleUsage } from './usage-reservations.ts';
+import type { CloudTransformationRequest } from '../contracts/cloud.js';
+import { ApiError } from '../lib/errors.js';
+import { parseCloudWav } from '../lib/wav.js';
+import { transformWithOpenAI, transcribeWithOpenAI } from './openai-provider.js';
+import { assertCloudProcessingEnabled } from './rate-limits.js';
+import { claimUsage, reserveUsage, settleUsage } from './usage-reservations.js';
 
 const TRANSFORM_ALIAS = 'pressay-transform-v1' as const;
 const TRANSCRIBE_ALIAS = 'pressay-transcribe-v1' as const;

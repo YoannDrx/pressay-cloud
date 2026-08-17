@@ -3,11 +3,11 @@ import { createHash } from 'node:crypto';
 import type Stripe from 'stripe';
 import { z } from 'zod';
 
-import { getStripe } from '../billing/stripe-client.ts';
-import type { BillingInterval } from '../contracts/billing.ts';
-import { getSql } from '../db/client.ts';
-import { getEnvironment } from '../env.ts';
-import { ApiError } from '../lib/errors.ts';
+import { getStripe } from '../billing/stripe-client.js';
+import type { BillingInterval } from '../contracts/billing.js';
+import { getSql } from '../db/client.js';
+import { getEnvironment } from '../env.js';
+import { ApiError } from '../lib/errors.js';
 
 const checkoutContextSchema = z.object({
   account_id: z.uuid(),

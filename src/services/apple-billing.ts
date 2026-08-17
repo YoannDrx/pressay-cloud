@@ -8,15 +8,15 @@ import {
 } from '@apple/app-store-server-library';
 import { z } from 'zod';
 
-import type { BillingInterval } from '../contracts/billing.ts';
-import { getSql } from '../db/client.ts';
-import { ApiError } from '../lib/errors.ts';
+import type { BillingInterval } from '../contracts/billing.js';
+import { getSql } from '../db/client.js';
+import { ApiError } from '../lib/errors.js';
 import {
   getVerifiedAppleSubscriptionStatuses,
   verifyAppleNotification,
   verifyAppleNotificationTransaction,
   verifyAppleTransaction,
-} from '../billing/apple-client.ts';
+} from '../billing/apple-client.js';
 
 const transactionSchema = z.object({
   transactionId: z.string().min(1).max(255),

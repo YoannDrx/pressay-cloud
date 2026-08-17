@@ -2,9 +2,9 @@ import { createHmac } from 'node:crypto';
 
 import { z } from 'zod';
 
-import { getSql } from '../db/client.ts';
-import { getEnvironment, requireEnvironmentValue } from '../env.ts';
-import { ApiError } from '../lib/errors.ts';
+import { getSql } from '../db/client.js';
+import { getEnvironment, requireEnvironmentValue } from '../env.js';
+import { ApiError } from '../lib/errors.js';
 
 const cleanupResultSchema = z.object({
   deleted_count: z.coerce.number().int().nonnegative(),

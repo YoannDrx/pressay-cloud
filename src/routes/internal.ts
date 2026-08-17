@@ -2,11 +2,11 @@ import { timingSafeEqual } from 'node:crypto';
 
 import { Hono } from 'hono';
 
-import { getEnvironment, requireEnvironmentValue } from '../env.ts';
-import { ApiError } from '../lib/errors.ts';
-import { runAccountDeletionBatch } from '../services/account-deletion.ts';
-import { cleanupExpiredRateLimitBuckets } from '../services/rate-limits.ts';
-import type { AppEnvironment } from '../types.ts';
+import { getEnvironment, requireEnvironmentValue } from '../env.js';
+import { ApiError } from '../lib/errors.js';
+import { runAccountDeletionBatch } from '../services/account-deletion.js';
+import { cleanupExpiredRateLimitBuckets } from '../services/rate-limits.js';
+import type { AppEnvironment } from '../types.js';
 
 export const internalRoutes = new Hono<AppEnvironment>();
 

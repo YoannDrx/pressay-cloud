@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import type { AppEnvironment } from '../types.ts';
+import type { AppEnvironment } from '../types.js';
 
 export function getClientIp(context: Context<AppEnvironment>): string {
   const forwarded =

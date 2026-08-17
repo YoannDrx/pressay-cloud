@@ -1,4 +1,4 @@
-import { getSql } from './client.ts';
+import { getSql } from './client.js';
 
 export async function databaseIsReady(): Promise<boolean> {
   try {

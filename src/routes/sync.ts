@@ -10,9 +10,9 @@ import {
   configureSyncRecoveryRequestSchema,
   enrollSyncDeviceRequestSchema,
   syncRecoveryEnvelopeResponseSchema,
-} from '../contracts/sync.ts';
-import { requireAuthentication } from '../lib/auth-middleware.ts';
-import { ApiError } from '../lib/errors.ts';
+} from '../contracts/sync.js';
+import { requireAuthentication } from '../lib/auth-middleware.js';
+import { ApiError } from '../lib/errors.js';
 import {
   appendSyncChanges,
   approveSyncDevice,
@@ -22,8 +22,8 @@ import {
   deleteSyncRecovery,
   enrollSyncDevice,
   getSyncChanges,
-} from '../services/sync.ts';
-import type { AppEnvironment } from '../types.ts';
+} from '../services/sync.js';
+import type { AppEnvironment } from '../types.js';
 
 export const syncRoutes = new Hono<AppEnvironment>();
 syncRoutes.use('/sync/*', requireAuthentication);

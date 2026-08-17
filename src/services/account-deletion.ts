@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { getStripe } from '../billing/stripe-client.ts';
-import { getSql } from '../db/client.ts';
+import { getStripe } from '../billing/stripe-client.js';
+import { getSql } from '../db/client.js';
 
 const deletionJobSchema = z.object({
   account_id: z.uuid(),
