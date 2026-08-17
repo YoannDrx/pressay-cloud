@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { betterAuth } from 'better-auth';
-import { bearer, magicLink } from 'better-auth/plugins';
+import { bearer, magicLink, oneTimeToken } from 'better-auth/plugins';
 
 import { generateAppleClientSecret } from './auth/apple.js';
 import { sendMagicLinkEmail } from './email/magic-link.js';
@@ -81,6 +81,7 @@ function buildAuth() {
     ),
     database: pool,
     trustedOrigins: [
+      new URL(environment.PRESSAY_API_URL).origin,
       ...environment.allowedOrigins,
       'pressay://',
       'https://appleid.apple.com',
@@ -98,6 +99,10 @@ function buildAuth() {
         expiresIn: 60 * 10,
         storeToken: 'hashed',
         sendMagicLink: ({ email, url }) => sendMagicLinkEmail({ email, url }),
+      }),
+      oneTimeToken({
+        expiresIn: 3,
+        storeToken: 'hashed',
       }),
       bearer({ requireSignature: true }),
     ],

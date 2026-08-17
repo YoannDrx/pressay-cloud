@@ -20,6 +20,8 @@ describe('authentication configuration', () => {
 
   it('creates an auth handler without optional social providers', () => {
     expect(getAuth().handler).toBeTypeOf('function');
+    expect(getAuth().api.generateOneTimeToken).toBeTypeOf('function');
+    expect(getAuth().api.verifyOneTimeToken).toBeTypeOf('function');
   });
 
   it('rejects a partially configured Google provider', () => {

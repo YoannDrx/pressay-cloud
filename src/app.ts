@@ -10,6 +10,7 @@ import { internalRoutes } from './routes/internal.js';
 import { accountRoutes } from './routes/accounts.js';
 import { billingRoutes } from './routes/billing.js';
 import { cloudRoutes } from './routes/cloud.js';
+import { desktopAuthRoutes } from './routes/desktop-auth.js';
 import { syncRoutes } from './routes/sync.js';
 import type { AppEnvironment } from './types.js';
 import { getAuth } from './auth.js';
@@ -40,6 +41,7 @@ app.route('/v1', internalRoutes);
 app.route('/v1', accountRoutes);
 app.route('/v1', billingRoutes);
 app.route('/v1', cloudRoutes);
+app.route('/v1', desktopAuthRoutes);
 app.route('/v1', syncRoutes);
 app.on(['GET', 'POST'], '/v1/auth/*', (context) => {
   return getAuth().handler(context.req.raw);

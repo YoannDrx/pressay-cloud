@@ -1,0 +1,68 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const generateOneTimeToken = vi.hoisted(() => vi.fn());
+const getSession = vi.hoisted(() => vi.fn());
+
+vi.mock('../src/auth.ts', () => ({
+  getAuth: () => ({
+    api: { generateOneTimeToken, getSession },
+    handler: vi.fn(),
+  }),
+}));
+
+import app from '../src/app.ts';
+import { clearEnvironmentCacheForTests } from '../src/env.ts';
+
+const state = 'FodV_qJ3ShZVDZL8lOzCZHJTp0GwP16hecwgvMvZ7Sg';
+
+describe('desktop authentication callback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.DATABASE_URL = 'postgresql://example.test/pressay';
+    process.env.PRESSAY_API_URL = 'https://api.press-say.app';
+    clearEnvironmentCacheForTests();
+    getSession.mockResolvedValue({
+      user: { id: 'auth-user', email: 'person@example.com' },
+      session: { id: 'session' },
+    });
+    generateOneTimeToken.mockResolvedValue({ token: 'single-use-secret' });
+  });
+
+  it('advertises only configured browser sign-in methods', async () => {
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.APPLE_CLIENT_ID;
+    const response = await app.request('/v1/desktop-auth/config');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      magicLink: true,
+      providers: [],
+      callbackUrl: 'https://api.press-say.app/v1/desktop-auth/callback',
+    });
+  });
+
+  it('rejects a missing or malformed login state before creating a token', async () => {
+    const response = await app.request('/v1/desktop-auth/callback?state=short');
+    expect(response.status).toBe(422);
+    expect(generateOneTimeToken).not.toHaveBeenCalled();
+  });
+
+  it('returns an uncacheable deep link carrying a one-time token in the fragment', async () => {
+    const response = await app.request(`/v1/desktop-auth/callback?state=${state}`, {
+      headers: { cookie: 'better-auth.session_token=signed-session' },
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(
+      `pressay://oauth/callback#token=single-use-secret&state=${state}`,
+    );
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(generateOneTimeToken).toHaveBeenCalledOnce();
+  });
+
+  it('does not mint a desktop token without an authenticated browser session', async () => {
+    getSession.mockResolvedValueOnce(null);
+    const response = await app.request(`/v1/desktop-auth/callback?state=${state}`);
+    expect(response.status).toBe(401);
+    expect(generateOneTimeToken).not.toHaveBeenCalled();
+  });
+});
