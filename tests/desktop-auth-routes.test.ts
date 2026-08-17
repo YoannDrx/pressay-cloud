@@ -20,6 +20,13 @@ describe('desktop authentication callback', () => {
     vi.clearAllMocks();
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     process.env.PRESSAY_API_URL = 'https://api.press-say.app';
+    delete process.env.RESEND_API_KEY;
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
+    delete process.env.APPLE_CLIENT_ID;
+    delete process.env.APPLE_TEAM_ID;
+    delete process.env.APPLE_KEY_ID;
+    delete process.env.APPLE_PRIVATE_KEY;
     clearEnvironmentCacheForTests();
     getSession.mockResolvedValue({
       user: { id: 'auth-user', email: 'person@example.com' },
@@ -29,14 +36,24 @@ describe('desktop authentication callback', () => {
   });
 
   it('advertises only configured browser sign-in methods', async () => {
-    delete process.env.GOOGLE_CLIENT_ID;
-    delete process.env.APPLE_CLIENT_ID;
     const response = await app.request('/v1/desktop-auth/config');
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      magicLink: true,
+      magicLink: false,
       providers: [],
       callbackUrl: 'https://api.press-say.app/v1/desktop-auth/callback',
+    });
+  });
+
+  it('advertises a method only when all of its credentials are configured', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    process.env.GOOGLE_CLIENT_ID = 'google-client';
+    process.env.GOOGLE_CLIENT_SECRET = 'google-secret';
+    clearEnvironmentCacheForTests();
+    const response = await app.request('/v1/desktop-auth/config');
+    expect(await response.json()).toMatchObject({
+      magicLink: true,
+      providers: ['google'],
     });
   });
 

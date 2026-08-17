@@ -17,10 +17,17 @@ export const desktopAuthRoutes = new Hono<AppEnvironment>();
 desktopAuthRoutes.get('/desktop-auth/config', (context) => {
   const environment = getEnvironment();
   return context.json({
-    magicLink: true,
+    magicLink: Boolean(environment.RESEND_API_KEY),
     providers: [
-      ...(environment.GOOGLE_CLIENT_ID ? ['google' as const] : []),
-      ...(environment.APPLE_CLIENT_ID ? ['apple' as const] : []),
+      ...(environment.GOOGLE_CLIENT_ID && environment.GOOGLE_CLIENT_SECRET
+        ? ['google' as const]
+        : []),
+      ...(environment.APPLE_CLIENT_ID &&
+      environment.APPLE_TEAM_ID &&
+      environment.APPLE_KEY_ID &&
+      environment.APPLE_PRIVATE_KEY
+        ? ['apple' as const]
+        : []),
     ],
     callbackUrl: new URL(
       '/v1/desktop-auth/callback',
