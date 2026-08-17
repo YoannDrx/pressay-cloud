@@ -95,6 +95,89 @@ export async function enrollSyncDevice(
   return result.data.approved ? 'approved' : 'pending';
 }
 
+interface SyncDevice {
+  id: string;
+  displayName: string;
+  publicKey: string;
+  status: 'approved' | 'pending';
+}
+
+export async function listSyncDevices(
+  authUserId: string,
+  approverDeviceId: string,
+): Promise<SyncDevice[]> {
+  const rows = await getSql().query(
+    `SELECT
+      target.id,
+      target.display_name,
+      encode(target.public_key, 'base64') AS public_key,
+      target.approved_at IS NOT NULL AS approved
+    FROM pressay_device approver
+    JOIN pressay_account account ON account.id = approver.account_id
+    JOIN entitlement entitlement ON entitlement.account_id = account.id
+    JOIN pressay_device target ON target.account_id = account.id
+    WHERE approver.id = $1
+      AND account.auth_user_id = $2
+      AND account.status = 'active'
+      AND approver.approved_at IS NOT NULL
+      AND approver.revoked_at IS NULL
+      AND entitlement.tier = 'pro'
+      AND entitlement.valid_until > now()
+      AND target.public_key IS NOT NULL
+      AND target.revoked_at IS NULL
+    ORDER BY target.created_at ASC`,
+    [approverDeviceId, authUserId],
+  );
+  return rows.map((unparsedRow) => {
+    const row = z
+      .object({
+        id: z.uuid(),
+        display_name: z.string().min(1).max(120),
+        public_key: z.string(),
+        approved: z.boolean(),
+      })
+      .parse(unparsedRow);
+    return {
+      id: row.id,
+      displayName: row.display_name,
+      publicKey: decodeBoundedBase64(row.public_key, 32, 512).toString('base64'),
+      status: row.approved ? ('approved' as const) : ('pending' as const),
+    };
+  });
+}
+
+export async function getSyncDeviceEnvelope(
+  authUserId: string,
+  deviceId: string,
+): Promise<{ encryptedAccountKey: string }> {
+  const rows = await getSql().query(
+    `SELECT encode(device.encrypted_account_key, 'base64') AS encrypted_account_key
+    FROM pressay_device device
+    JOIN pressay_account account ON account.id = device.account_id
+    JOIN entitlement entitlement ON entitlement.account_id = account.id
+    WHERE device.id = $1
+      AND account.auth_user_id = $2
+      AND account.status = 'active'
+      AND device.approved_at IS NOT NULL
+      AND device.revoked_at IS NULL
+      AND device.encrypted_account_key IS NOT NULL
+      AND entitlement.tier = 'pro'
+      AND entitlement.valid_until > now()`,
+    [deviceId, authUserId],
+  );
+  const result = z.object({ encrypted_account_key: z.string() }).safeParse(rows[0]);
+  if (!result.success) {
+    throw new ApiError(403, 'sync_envelope_unavailable', 'Sync envelope unavailable');
+  }
+  return {
+    encryptedAccountKey: decodeBoundedBase64(
+      result.data.encrypted_account_key,
+      48,
+      16_384,
+    ).toString('base64'),
+  };
+}
+
 export async function approveSyncDevice(
   authUserId: string,
   targetDeviceId: string,

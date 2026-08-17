@@ -40,6 +40,21 @@ export const syncRecoveryEnvelopeResponseSchema = z.strictObject({
   encryptedAccountKey: boundedBase64(16_384),
 });
 
+export const syncDeviceSchema = z.strictObject({
+  id: z.uuid(),
+  displayName: z.string().min(1).max(120),
+  publicKey: boundedBase64(512),
+  status: z.enum(['approved', 'pending']),
+});
+
+export const syncDeviceListResponseSchema = z.strictObject({
+  devices: z.array(syncDeviceSchema),
+});
+
+export const syncDeviceEnvelopeResponseSchema = z.strictObject({
+  encryptedAccountKey: boundedBase64(16_384),
+});
+
 export const syncChangeInputSchema = z.strictObject({
   objectType: z.enum(['mode', 'profile', 'dictionary', 'preference']),
   objectId: z.uuid(),

@@ -9,6 +9,8 @@ import {
   completeSyncRecoveryRequestSchema,
   configureSyncRecoveryRequestSchema,
   enrollSyncDeviceRequestSchema,
+  syncDeviceEnvelopeResponseSchema,
+  syncDeviceListResponseSchema,
   syncRecoveryEnvelopeResponseSchema,
 } from '../contracts/sync.js';
 import { requireAuthentication } from '../lib/auth-middleware.js';
@@ -22,6 +24,8 @@ import {
   deleteSyncRecovery,
   enrollSyncDevice,
   getSyncChanges,
+  getSyncDeviceEnvelope,
+  listSyncDevices,
 } from '../services/sync.js';
 import type { AppEnvironment } from '../types.js';
 
@@ -42,6 +46,26 @@ syncRoutes.post(
     return context.json({ status }, status === 'approved' ? 201 : 202);
   },
 );
+
+syncRoutes.get('/sync/devices', async (context) => {
+  const approverDeviceId = parseUuid(context.req.query('approverDeviceId') ?? '');
+  return context.json(
+    syncDeviceListResponseSchema.parse({
+      devices: await listSyncDevices(context.get('authUserId'), approverDeviceId),
+    }),
+  );
+});
+
+syncRoutes.get('/sync/devices/:id/envelope', async (context) => {
+  return context.json(
+    syncDeviceEnvelopeResponseSchema.parse(
+      await getSyncDeviceEnvelope(
+        context.get('authUserId'),
+        parseUuid(context.req.param('id')),
+      ),
+    ),
+  );
+});
 
 syncRoutes.put(
   '/sync/recovery',
