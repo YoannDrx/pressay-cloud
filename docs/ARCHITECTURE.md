@@ -14,7 +14,8 @@ envelopes. Cloud text and audio processing is stateless.
 3. Better Auth resolves a short-lived session or bearer token.
 4. Protected handlers verify the device and current server entitlement.
 5. Billable operations reserve quota transactionally before contacting a
-   provider, then finalize or release the reservation.
+   provider. A second atomic claim prevents concurrent provider calls for the
+   same idempotency key; the reservation is then finalized or released.
 6. Structured logs include only operation metadata from a fixed allowlist.
 
 ## Data stores
@@ -22,6 +23,9 @@ envelopes. Cloud text and audio processing is stateless.
 - Neon Postgres stores account metadata, devices, billing state, usage counters,
   idempotency records and encrypted sync blobs.
 - Provider payloads are never written to Postgres, Vercel logs or traces.
+- Transformation calls use the Responses API with `store: false` and in-memory
+  prompt-cache retention. Audio transcription uses the stateless transcription
+  endpoint. Pressay retains neither response.
 - Private keys remain in the macOS Keychain. Neon stores only device public keys,
   encrypted account-key envelopes and ciphertext.
 
@@ -31,6 +35,19 @@ envelopes. Cloud text and audio processing is stateless.
 - SQL is tested on a Neon child branch before production application.
 - Production deploys use `fra1` and a pooled Neon URL in the same EU region.
 - Migrations use the direct URL and run as a separate release operation.
+
+## Cloud processing aliases
+
+The client knows only stable Pressay aliases. Deployment configuration maps
+`pressay-transform-v1` and `pressay-transcribe-v1` to pinned provider snapshots,
+so a provider migration does not require a desktop release. Model identifiers
+and provider credentials never come from client input.
+
+The transformation route accepts at most 50,000 transcript characters and
+20,000 selected-context characters. The transcription route accepts only
+validated 16-bit PCM WAV at 8–48 kHz, mono or stereo, up to 4 MB and 180 seconds.
+Both routes require `contentTransferAcknowledged: true` and never silently
+fallback from a local request.
 
 ## Entitlement signing
 

@@ -55,11 +55,15 @@ export async function reserveUsage(
   kind: UsageKind,
   units: number,
   idempotencyKey: string,
+  requestHash: Buffer,
 ): Promise<UsageReservation> {
+  if (requestHash.length !== 32) {
+    throw new ApiError(422, 'invalid_request_hash', 'Request hash is invalid');
+  }
   try {
     const rows = await getSql().query(
-      'SELECT * FROM reserve_pressay_usage($1, $2, $3, $4, $5)',
-      [authUserId, deviceId, kind, units, idempotencyKey],
+      "SELECT * FROM reserve_pressay_usage($1, $2, $3, $4, $5, decode($6, 'hex'))",
+      [authUserId, deviceId, kind, units, idempotencyKey, requestHash.toString('hex')],
     );
     const row = reservationRowSchema.parse(rows[0]);
     return {
@@ -71,6 +75,13 @@ export async function reserveUsage(
   } catch (error) {
     return mapReservationError(error);
   }
+}
+
+export async function claimUsage(reservationId: string): Promise<boolean> {
+  const rows = await getSql().query('SELECT claim_pressay_usage($1) AS claimed', [
+    reservationId,
+  ]);
+  return z.object({ claimed: z.boolean() }).parse(rows[0]).claimed;
 }
 
 export async function settleUsage(
