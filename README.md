@@ -21,12 +21,21 @@ hash detects idempotency-key misuse without retaining the request body. A failed
 provider call releases the reservation; a completed or in-flight key is never
 sent to the provider twice.
 
+App Store purchases use StoreKit 2 signed transactions. The restore endpoint
+requires the transaction `appAccountToken` to equal the authenticated Pressay
+account UUID, then refreshes status through the App Store Server API. Version 2
+notifications are verified against Apple's published roots before they update
+billing state. Stripe and Apple subscriptions are projected through one
+entitlement recomputation function, so an expired provider cannot revoke another
+provider's still-current entitlement.
+
 ## Runtime
 
 - Node.js 22
 - Hono on Vercel Functions
 - Neon Postgres in the EU
 - Better Auth
+- Apple App Store Server Library
 - Zod contracts
 - Vitest
 
@@ -57,6 +66,7 @@ are applied to the production branch.
 bun run ci:source
 bun run db:migrate
 bun run db:migrate # proves checksum validation and idempotency
+bun run billing:configure:app-store
 ```
 
 GitHub-hosted Actions are intentionally not required: this private repository is

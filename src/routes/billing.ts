@@ -1,7 +1,12 @@
 import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
 
-import { billingRedirectSchema, checkoutRequestSchema } from '../contracts/billing.ts';
+import {
+  billingRedirectSchema,
+  checkoutRequestSchema,
+  restoreAppStoreRequestSchema,
+  restoreAppStoreResponseSchema,
+} from '../contracts/billing.ts';
 import { requireAuthentication } from '../lib/auth-middleware.ts';
 import { ApiError } from '../lib/errors.ts';
 import {
@@ -9,6 +14,10 @@ import {
   createCheckout,
   processStripeWebhook,
 } from '../services/billing.ts';
+import {
+  processAppleWebhook,
+  restoreAppStorePurchase,
+} from '../services/apple-billing.ts';
 import type { AppEnvironment } from '../types.ts';
 
 export const billingRoutes = new Hono<AppEnvironment>();
@@ -53,6 +62,34 @@ billingRoutes.post('/billing/portal', async (context) => {
   );
 });
 
+billingRoutes.post(
+  '/billing/restore-app-store',
+  zValidator('json', restoreAppStoreRequestSchema, (result) => {
+    if (!result.success) {
+      throw new ApiError(422, 'invalid_request', 'Invalid App Store restore request');
+    }
+  }),
+  async (context) => {
+    const idempotencyKey = context.req.header('idempotency-key');
+    if (!idempotencyKey || idempotencyKey.length < 16 || idempotencyKey.length > 255) {
+      throw new ApiError(
+        422,
+        'idempotency_key_required',
+        'A valid idempotency key is required',
+      );
+    }
+    return context.json(
+      restoreAppStoreResponseSchema.parse(
+        await restoreAppStorePurchase(
+          context.get('authUserId'),
+          context.req.valid('json').signedTransaction,
+          idempotencyKey,
+        ),
+      ),
+    );
+  },
+);
+
 billingRoutes.post('/webhooks/stripe', async (context) => {
   const declaredLength = Number(context.req.header('content-length') ?? '0');
   if (declaredLength > 1_048_576) {
@@ -66,5 +103,18 @@ billingRoutes.post('/webhooks/stripe', async (context) => {
     throw new ApiError(422, 'webhook_too_large', 'Webhook payload is too large');
   }
   await processStripeWebhook(rawBody, signature);
+  return context.json({ received: true });
+});
+
+billingRoutes.post('/webhooks/apple', async (context) => {
+  const declaredLength = Number(context.req.header('content-length') ?? '0');
+  if (declaredLength > 1_048_576) {
+    throw new ApiError(422, 'webhook_too_large', 'Webhook payload is too large');
+  }
+  const rawBody = await context.req.raw.text();
+  if (Buffer.byteLength(rawBody, 'utf8') > 1_048_576) {
+    throw new ApiError(422, 'webhook_too_large', 'Webhook payload is too large');
+  }
+  await processAppleWebhook(rawBody);
   return context.json({ received: true });
 });
