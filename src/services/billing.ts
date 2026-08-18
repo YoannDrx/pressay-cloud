@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import type Stripe from 'stripe';
 import { z } from 'zod';
@@ -15,6 +15,13 @@ const checkoutContextSchema = z.object({
   provider_price_id: z.string(),
   trial_ends_at: z.coerce.date().nullable(),
 });
+
+function checkoutIntegrationIdentifier(): string {
+  const suffix = Array.from(randomBytes(8), (byte) =>
+    String.fromCharCode(97 + (byte % 26)),
+  ).join('');
+  return `pressay_checkout_${suffix}`;
+}
 
 async function getCheckoutContext(authUserId: string, interval: BillingInterval) {
   const rows = await getSql().query(
@@ -69,9 +76,19 @@ export async function createCheckout(
   email: string,
   interval: BillingInterval,
   idempotencyKey: string,
+  termsVersion: string,
+  immediatePerformanceConsent: true,
 ): Promise<string> {
   const environment = getEnvironment();
   const context = await getCheckoutContext(authUserId, interval);
+  await getSql().query(
+    `INSERT INTO billing_legal_acceptance (
+      account_id, checkout_idempotency_key, terms_version,
+      immediate_performance_consent
+    ) VALUES ($1, $2, $3, $4)
+    ON CONFLICT (account_id, checkout_idempotency_key) DO NOTHING`,
+    [context.account_id, idempotencyKey, termsVersion, immediatePerformanceConsent],
+  );
   const customerId = await ensureStripeCustomer(
     authUserId,
     email,
@@ -85,6 +102,7 @@ export async function createCheckout(
   const session = await getStripe().checkout.sessions.create(
     {
       mode: 'subscription',
+      integration_identifier: checkoutIntegrationIdentifier(),
       customer: customerId,
       line_items: [{ price: context.provider_price_id, quantity: 1 }],
       success_url: environment.STRIPE_CHECKOUT_SUCCESS_URL,

@@ -49,6 +49,7 @@ bun run ci:source
 vercel deploy --prod --yes
 vercel curl /v1/health --deployment https://pressay-cloud-staging.vercel.app
 vercel curl /v1/ready --deployment https://pressay-cloud-staging.vercel.app
+bun run validate:staging
 ```
 
 Expected results are HTTP 200 with process health and database readiness. The

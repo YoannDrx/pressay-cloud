@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 export const checkoutRequestSchema = z.strictObject({
   interval: z.enum(['month', 'year']),
+  acceptedTerms: z.literal(true),
+  immediatePerformanceConsent: z.literal(true),
+  termsVersion: z.string().regex(/^20\d{2}-\d{2}-\d{2}$/),
 });
 
 export const billingRedirectSchema = z.strictObject({

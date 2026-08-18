@@ -46,6 +46,8 @@ billingRoutes.post(
           context.get('authEmail'),
           context.req.valid('json').interval,
           idempotencyKey,
+          context.req.valid('json').termsVersion,
+          context.req.valid('json').immediatePerformanceConsent,
         ),
       }),
       201,

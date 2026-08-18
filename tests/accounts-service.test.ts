@@ -103,7 +103,7 @@ describe('account service', () => {
   it('returns used, reserved and configured quota independently', async () => {
     query.mockResolvedValueOnce([
       {
-        period_start: '2026-08-01',
+        period_start: new Date('2026-08-01T00:00:00.000Z'),
         transcription_seconds_used: '42',
         transcription_seconds_reserved: '8',
         transformations_used: '5',
@@ -118,5 +118,8 @@ describe('account service', () => {
       transcription: { usedSeconds: 42, reservedSeconds: 8, limitSeconds: 36000 },
       transformations: { used: 5, reserved: 1, limit: 2000 },
     });
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "to_char(date_trunc('month', now()), 'YYYY-MM-DD')",
+    );
   });
 });

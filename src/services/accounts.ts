@@ -48,6 +48,16 @@ function nullableIso(value: Date | string | null): string | null {
   return value === null ? null : iso(value);
 }
 
+function dateOnly(value: unknown): string {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  throw new ApiError(500, 'invalid_usage_period', 'Invalid usage period');
+}
+
 function deviceIdentifierHash(identifier: string): string {
   const environment = getEnvironment();
   return createHmac(
@@ -241,7 +251,7 @@ export async function assertActiveDevice(
 export async function getUsage(authUserId: string): Promise<UsageSnapshot> {
   const rows = await getSql().query(
     `SELECT
-      date_trunc('month', now())::date AS period_start,
+      to_char(date_trunc('month', now()), 'YYYY-MM-DD') AS period_start,
       COALESCE(u.transcription_seconds_used, 0) AS transcription_seconds_used,
       COALESCE(u.transcription_seconds_reserved, 0) AS transcription_seconds_reserved,
       COALESCE(u.transformations_used, 0) AS transformations_used,
@@ -260,7 +270,7 @@ export async function getUsage(authUserId: string): Promise<UsageSnapshot> {
   const row = rows[0] as Record<string, unknown> | undefined;
   if (!row) throw new ApiError(404, 'account_not_found', 'Account not found');
   return usageSnapshotSchema.parse({
-    periodStart: String(row.period_start),
+    periodStart: dateOnly(row.period_start),
     transcription: {
       usedSeconds: Number(row.transcription_seconds_used),
       reservedSeconds: Number(row.transcription_seconds_reserved),

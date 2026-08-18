@@ -18,4 +18,13 @@ describe('environment', () => {
   it('rejects non-Postgres database URLs', () => {
     expect(() => getEnvironment({ DATABASE_URL: 'https://example.test' })).toThrow();
   });
+
+  it('requires Better Auth issuer and JWKS URL together', () => {
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_BETTER_AUTH_JWT_ISSUER: 'https://press-say.app',
+      }),
+    ).toThrow('Better Auth issuer and JWKS URL must be configured together');
+  });
 });

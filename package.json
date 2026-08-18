@@ -11,6 +11,7 @@
     "dev": "vercel dev",
     "start": "tsx src/server.ts",
     "build": "tsc --noEmit",
+    "build:deploy": "bun run build && if [ \"$VERCEL_ENV\" = \"production\" ]; then bun run db:migrate && bun run billing:configure; fi",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
@@ -24,6 +25,7 @@
     "billing:configure": "tsx scripts/configure-billing.ts",
     "billing:configure:app-store": "tsx scripts/configure-app-store-billing.ts",
     "jobs:account-deletions": "tsx scripts/run-account-deletions.ts",
+    "validate:staging": "tsx scripts/validate-staging.ts",
     "verify": "bun run typecheck && bun run lint && bun run format:check && bun run test"
   },
   "dependencies": {

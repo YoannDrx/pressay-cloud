@@ -15,6 +15,8 @@ import {
   deleteSyncRecovery,
   enrollSyncDevice,
   getSyncChanges,
+  getSyncDeviceEnvelope,
+  listSyncDevices,
 } from '../src/services/sync.ts';
 
 const accountId = '95e286b8-8bf9-4cf6-bf73-fc09361dc88c';
@@ -71,6 +73,37 @@ describe('E2EE sync', () => {
         envelope,
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it('lists public sync keys only through an approved Pro device', async () => {
+    query.mockResolvedValueOnce([
+      {
+        id: deviceId,
+        display_name: 'Pressay Mac',
+        public_key: Buffer.alloc(32, 4).toString('base64'),
+        approved: false,
+      },
+    ]);
+    await expect(listSyncDevices('auth-user', deviceId)).resolves.toEqual([
+      {
+        id: deviceId,
+        displayName: 'Pressay Mac',
+        publicKey: Buffer.alloc(32, 4).toString('base64'),
+        status: 'pending',
+      },
+    ]);
+  });
+
+  it('returns an approved device only its opaque account-key envelope', async () => {
+    query.mockResolvedValueOnce([{ encrypted_account_key: envelope }]);
+    await expect(getSyncDeviceEnvelope('auth-user', deviceId)).resolves.toEqual({
+      encryptedAccountKey: envelope,
+    });
+
+    query.mockResolvedValueOnce([]);
+    await expect(getSyncDeviceEnvelope('auth-user', deviceId)).rejects.toMatchObject({
+      code: 'sync_envelope_unavailable',
+    });
   });
 
   it('configures and removes a client-generated recovery envelope', async () => {

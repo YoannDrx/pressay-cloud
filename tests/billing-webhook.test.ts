@@ -94,6 +94,9 @@ describe('Stripe webhook processing', () => {
     expect(
       checkoutRequestSchema.safeParse({
         interval: 'month',
+        acceptedTerms: true,
+        immediatePerformanceConsent: true,
+        termsVersion: '2026-08-10',
         priceId: 'price_attacker_controlled',
       }).success,
     ).toBe(false);

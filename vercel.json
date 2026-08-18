@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "bunx bun@1.2.19 install --frozen-lockfile",
+  "buildCommand": "bun run build:deploy",
   "framework": "hono",
   "regions": ["fra1"],
   "functions": {
