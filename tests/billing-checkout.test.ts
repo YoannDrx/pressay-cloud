@@ -48,6 +48,8 @@ describe('Stripe Checkout', () => {
         'person@example.com',
         'month',
         'checkout-idempotency-key',
+        '2026-08-10',
+        true,
       ),
     ).resolves.toBe('https://checkout.stripe.com/c/pay/test');
 
@@ -61,6 +63,18 @@ describe('Stripe Checkout', () => {
     );
     expect(createCheckoutSession.mock.calls[0]?.[0]).not.toHaveProperty(
       'payment_method_types',
+    );
+    expect(JSON.stringify(createCheckoutSession.mock.calls[0]?.[0])).toMatch(
+      /"integration_identifier":"pressay_checkout_[a-z]{8}"/,
+    );
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO billing_legal_acceptance'),
+      [
+        '95e286b8-8bf9-4cf6-bf73-fc09361dc88c',
+        'checkout-idempotency-key',
+        '2026-08-10',
+        true,
+      ],
     );
   });
 });
