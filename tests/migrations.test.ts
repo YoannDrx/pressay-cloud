@@ -27,4 +27,17 @@ describe('database migrations', () => {
     expect(migration).toContain('Raw payloads and payment instruments are forbidden');
     expect(migration).not.toContain('jsonb');
   });
+
+  it('preserves legacy access without carrying provider identifiers across accounts', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0014_migrate_legacy_accounts.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain('FROM accounts AS legacy_account');
+    expect(migration).toContain("WHEN is_trial THEN 'trial'");
+    expect(migration).toContain("WHEN is_pro THEN 'support'");
+    expect(migration).not.toContain('stripe_customer_id');
+    expect(migration).not.toContain('stripe_subscription_id');
+  });
 });

@@ -85,3 +85,9 @@ Do not move `api.press-say.app` until all of the following are true:
 
 The cutover is a separate, explicit operation. A staging deployment must never
 implicitly reassign the production domain.
+
+Migration `0014_migrate_legacy_accounts.sql` preserves the stable identity subject
+and effective legacy entitlement before cutover. It deliberately does not copy
+Stripe customer or subscription identifiers because those identifiers belong to
+the Stripe account that created them. Reconcile provider records separately against
+the dedicated Pressay account before enabling Checkout.
