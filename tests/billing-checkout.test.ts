@@ -23,7 +23,29 @@ describe('Stripe Checkout', () => {
     createCustomer.mockReset();
     createCheckoutSession.mockReset();
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
+    process.env.STRIPE_COMMERCIAL_LAUNCH_ENABLED = 'true';
     clearEnvironmentCacheForTests();
+  });
+
+  it('keeps Cloud Checkout closed behind the commercial release gate', async () => {
+    process.env.STRIPE_COMMERCIAL_LAUNCH_ENABLED = 'false';
+    clearEnvironmentCacheForTests();
+
+    await expect(
+      createCheckout(
+        'auth-user',
+        'person@example.com',
+        'month',
+        'checkout-idempotency-key',
+        '2026-08-10',
+        true,
+      ),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: 'commercial_launch_not_enabled',
+    });
+    expect(query).not.toHaveBeenCalled();
+    expect(createCheckoutSession).not.toHaveBeenCalled();
   });
 
   it('uses the server-owned price and propagates idempotency', async () => {

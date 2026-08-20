@@ -87,7 +87,10 @@ runner holds a Postgres advisory lock, executes each pending migration in a
 transaction and records its SHA-256 checksum. A changed migration is rejected.
 
 Production migrations are prepared and verified on a Neon branch before they
-are applied to the production branch.
+are applied to the production branch. Vercel builds never mutate the database:
+an operator runs `bun run release:prepare` against the intended environment,
+records the Neon restore point, and only then promotes a deployment. Production
+builds are rejected unless Vercel identifies an immutable commit from `main`.
 
 ## Verification
 
@@ -95,6 +98,7 @@ are applied to the production branch.
 bun run ci:source
 bun run db:migrate
 bun run db:migrate # proves checksum validation and idempotency
+bun run db:check
 bun run billing:configure:app-store
 ```
 

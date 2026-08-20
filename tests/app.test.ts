@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/db/health.ts', () => ({
-  databaseIsReady: vi.fn(() => Promise.resolve(true)),
+  databaseReadiness: vi.fn(() =>
+    Promise.resolve({
+      ready: true,
+      schemaVersion: '0013_billing_financial_events.sql',
+    }),
+  ),
 }));
 
 import app from '../src/app.ts';
@@ -26,7 +31,10 @@ describe('Pressay Cloud API', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       status: 'ready',
-      checks: { database: 'up' },
+      checks: {
+        database: 'up',
+        schemaVersion: '0013_billing_financial_events.sql',
+      },
     });
   });
 

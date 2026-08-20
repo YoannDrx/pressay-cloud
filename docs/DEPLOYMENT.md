@@ -42,15 +42,21 @@ values must never be placed in shell history, GitHub, documentation or logs.
 
 ## Deploy and verify
 
-Run the source gate before every deployment:
+Run the source and controlled migration gates before every promotion:
 
 ```bash
 bun run ci:source
-vercel deploy --prod --yes
+bun run release:prepare
+vercel inspect --logs <git-integrated-main-deployment>
 vercel curl /v1/health --deployment https://pressay-cloud-staging.vercel.app
 vercel curl /v1/ready --deployment https://pressay-cloud-staging.vercel.app
 bun run validate:staging
 ```
+
+`build:deploy` rejects production deployments that are not attributed to a
+40-character commit on `main`. Manual production deploys are therefore blocked;
+use a Git-integrated immutable deployment and promote only after the migration
+gate records the database restore point.
 
 Expected results are HTTP 200 with process health and database readiness. The
 maintenance route must return 401 without the cron token and 200 with the token.

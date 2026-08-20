@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 
-import { databaseIsReady } from '../db/health.js';
+import { databaseReadiness } from '../db/health.js';
 import { healthResponseSchema, readyResponseSchema } from '../contracts/health.js';
 
 export const healthRoutes = new Hono()
@@ -10,16 +10,20 @@ export const healthRoutes = new Hono()
         status: 'ok',
         service: 'pressay-cloud',
         version: process.env.VERCEL_GIT_COMMIT_SHA ?? 'development',
+        environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
       }),
     );
   })
   .get('/ready', async (context) => {
-    const ready = await databaseIsReady();
+    const readiness = await databaseReadiness();
     return context.json(
       readyResponseSchema.parse({
-        status: ready ? 'ready' : 'unavailable',
-        checks: { database: ready ? 'up' : 'down' },
+        status: readiness.ready ? 'ready' : 'unavailable',
+        checks: {
+          database: readiness.ready ? 'up' : 'down',
+          schemaVersion: readiness.schemaVersion,
+        },
       }),
-      ready ? 200 : 503,
+      readiness.ready ? 200 : 503,
     );
   });

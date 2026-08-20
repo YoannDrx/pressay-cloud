@@ -80,6 +80,13 @@ export async function createCheckout(
   immediatePerformanceConsent: true,
 ): Promise<string> {
   const environment = getEnvironment();
+  if (!environment.STRIPE_COMMERCIAL_LAUNCH_ENABLED) {
+    throw new ApiError(
+      503,
+      'commercial_launch_not_enabled',
+      'Commercial checkout is not enabled',
+    );
+  }
   const context = await getCheckoutContext(authUserId, interval);
   await getSql().query(
     `INSERT INTO billing_legal_acceptance (
@@ -146,6 +153,234 @@ function stripeObjectId(value: string | { id: string } | null): string | null {
   return typeof value === 'string' ? value : value.id;
 }
 
+type FinancialEventKind =
+  'invoice_paid' | 'invoice_failed' | 'invoice_voided' | 'refund' | 'dispute';
+
+interface FinancialProjection {
+  providerObjectId: string;
+  customerId: string;
+  subscriptionId: string | null;
+  kind: FinancialEventKind;
+  status: string;
+  amountMinor: number;
+  currency: string;
+  fullReversal: boolean;
+  subscriptionStatusOverride: 'active' | 'past_due' | 'refunded' | null;
+  chargeOccurredAt: number | null;
+}
+
+async function recordStripeFinancialProjection(
+  event: Stripe.Event,
+  payloadHash: string,
+  projection: FinancialProjection,
+): Promise<boolean> {
+  if (!/^[a-z]{3}$/.test(projection.currency) || projection.amountMinor < 0) {
+    return false;
+  }
+  const rows = await getSql().query(
+    `WITH incoming AS (
+      INSERT INTO provider_event (
+        provider, provider_event_id, payload_sha256, event_type, provider_occurred_at
+      ) VALUES ('stripe', $1, decode($2, 'hex'), $3, to_timestamp($4))
+      ON CONFLICT (provider, provider_event_id) DO NOTHING
+      RETURNING provider_event_id
+    ), account_context AS (
+      SELECT customer.account_id
+      FROM billing_customer customer, incoming
+      WHERE customer.stripe_customer_id = $5
+    ), financial_insert AS (
+      INSERT INTO billing_financial_event (
+        provider, provider_event_id, provider_object_id, account_id,
+        provider_subscription_id, kind, status, amount_minor, currency,
+        full_reversal, provider_occurred_at
+      )
+      SELECT
+        'stripe', $1, $6, account_context.account_id, $7, $8, $9,
+        $10, $11, $12, to_timestamp($4)
+      FROM account_context
+      ON CONFLICT (provider, provider_event_id) DO NOTHING
+      RETURNING account_id
+    ), subscription_update AS (
+      UPDATE billing_subscription subscription
+      SET status = $13, updated_at = now(), provider_event_occurred_at = to_timestamp($4)
+      FROM financial_insert
+      WHERE $13::text IS NOT NULL
+        AND subscription.account_id = financial_insert.account_id
+        AND subscription.provider = 'stripe'
+        AND ($7::text IS NULL OR subscription.provider_subscription_id = $7)
+        AND subscription.provider_event_occurred_at <= to_timestamp($4)
+        AND (
+          $14::bigint IS NULL
+          OR subscription.current_period_starts_at IS NULL
+          OR to_timestamp($14) >= subscription.current_period_starts_at
+        )
+      RETURNING subscription.account_id
+    ), entitlement_refresh AS (
+      SELECT recompute_pressay_entitlement(account_id) AS changed
+      FROM subscription_update
+    )
+    UPDATE provider_event event
+    SET
+      state = CASE WHEN EXISTS (SELECT 1 FROM financial_insert) THEN 'applied' ELSE 'ignored' END,
+      error_code = CASE WHEN EXISTS (SELECT 1 FROM financial_insert) THEN NULL ELSE 'billing_customer_not_found' END,
+      processed_at = now()
+    WHERE event.provider = 'stripe'
+      AND event.provider_event_id = $1
+      AND event.state = 'received'
+    RETURNING state`,
+    [
+      event.id,
+      payloadHash,
+      event.type,
+      event.created,
+      projection.customerId,
+      projection.providerObjectId,
+      projection.subscriptionId,
+      projection.kind,
+      projection.status,
+      projection.amountMinor,
+      projection.currency,
+      projection.fullReversal,
+      projection.subscriptionStatusOverride,
+      projection.chargeOccurredAt,
+    ],
+  );
+  return rows[0]?.state === 'applied';
+}
+
+function invoiceSubscription(
+  invoice: Stripe.Invoice,
+): string | Stripe.Subscription | null {
+  return invoice.parent?.subscription_details?.subscription ?? null;
+}
+
+async function processStripeInvoiceEvent(
+  event: Stripe.Event,
+  invoice: Stripe.Invoice,
+  payloadHash: string,
+): Promise<boolean> {
+  const subscriptionReference = invoiceSubscription(invoice);
+  if (!subscriptionReference) return false;
+  const subscription =
+    typeof subscriptionReference === 'string'
+      ? await getStripe().subscriptions.retrieve(subscriptionReference)
+      : subscriptionReference;
+  const applied = await applyStripeSubscription(event, subscription, payloadHash);
+  if (!applied) return false;
+  const customerId = stripeObjectId(invoice.customer);
+  if (!customerId) return false;
+  const kind: FinancialEventKind =
+    event.type === 'invoice.paid'
+      ? 'invoice_paid'
+      : event.type === 'invoice.voided'
+        ? 'invoice_voided'
+        : 'invoice_failed';
+  await getSql().query(
+    `INSERT INTO billing_financial_event (
+      provider, provider_event_id, provider_object_id, account_id,
+      provider_subscription_id, kind, status, amount_minor, currency,
+      full_reversal, provider_occurred_at
+    )
+    SELECT
+      'stripe', $1, $2, customer.account_id, $3, $4, $5, $6, $7,
+      false, to_timestamp($8)
+    FROM billing_customer customer
+    WHERE customer.stripe_customer_id = $9
+    ON CONFLICT (provider, provider_event_id) DO NOTHING`,
+    [
+      event.id,
+      invoice.id,
+      subscription.id,
+      kind,
+      invoice.status ?? event.type,
+      event.type === 'invoice.paid' ? invoice.amount_paid : invoice.amount_due,
+      invoice.currency,
+      event.created,
+      customerId,
+    ],
+  );
+  return true;
+}
+
+async function resolveCharge(
+  charge: string | Stripe.Charge | null,
+): Promise<Stripe.Charge | null> {
+  if (!charge) return null;
+  return typeof charge === 'string' ? getStripe().charges.retrieve(charge) : charge;
+}
+
+async function processStripeFinancialEvent(
+  event: Stripe.Event,
+  payloadHash: string,
+): Promise<boolean | null> {
+  if (event.data.object.object === 'charge' && event.type === 'charge.refunded') {
+    const charge = event.data.object;
+    const customerId = stripeObjectId(charge.customer);
+    if (!customerId) return false;
+    const fullReversal = charge.amount_refunded >= charge.amount;
+    return recordStripeFinancialProjection(event, payloadHash, {
+      providerObjectId: charge.id,
+      customerId,
+      subscriptionId: null,
+      kind: 'refund',
+      status: fullReversal ? 'succeeded_full' : 'succeeded_partial',
+      amountMinor: charge.amount_refunded,
+      currency: charge.currency,
+      fullReversal,
+      subscriptionStatusOverride: fullReversal ? 'refunded' : null,
+      chargeOccurredAt: charge.created,
+    });
+  }
+  if (event.data.object.object === 'refund' && event.type.startsWith('refund.')) {
+    const refund = event.data.object;
+    const charge = await resolveCharge(refund.charge);
+    const customerId = charge ? stripeObjectId(charge.customer) : null;
+    if (!charge || !customerId) return false;
+    const fullReversal =
+      refund.status === 'succeeded' && charge.amount_refunded >= charge.amount;
+    return recordStripeFinancialProjection(event, payloadHash, {
+      providerObjectId: refund.id,
+      customerId,
+      subscriptionId: null,
+      kind: 'refund',
+      status: refund.status ?? 'unknown',
+      amountMinor: refund.amount,
+      currency: refund.currency,
+      fullReversal,
+      subscriptionStatusOverride: fullReversal ? 'refunded' : null,
+      chargeOccurredAt: charge.created,
+    });
+  }
+  if (
+    event.data.object.object === 'dispute' &&
+    event.type.startsWith('charge.dispute.')
+  ) {
+    const dispute = event.data.object;
+    const charge = await resolveCharge(dispute.charge);
+    const customerId = charge ? stripeObjectId(charge.customer) : null;
+    if (!charge || !customerId) return false;
+    const override =
+      dispute.status === 'lost'
+        ? 'refunded'
+        : dispute.status === 'won'
+          ? 'active'
+          : 'past_due';
+    return recordStripeFinancialProjection(event, payloadHash, {
+      providerObjectId: dispute.id,
+      customerId,
+      subscriptionId: null,
+      kind: 'dispute',
+      status: dispute.status,
+      amountMinor: dispute.amount,
+      currency: dispute.currency,
+      fullReversal: dispute.amount >= charge.amount,
+      subscriptionStatusOverride: override,
+      chargeOccurredAt: charge.created,
+    });
+  }
+  return null;
+}
+
 function mapStripeStatus(
   status: Stripe.Subscription.Status,
 ): 'trialing' | 'active' | 'past_due' | 'paused' | 'canceled' | 'expired' {
@@ -169,17 +404,19 @@ async function applyStripeSubscription(
   event: Stripe.Event,
   subscription: Stripe.Subscription,
   payloadHash: string,
-): Promise<void> {
+): Promise<boolean> {
   const accountId = z.uuid().safeParse(subscription.metadata.pressay_account_id);
-  const item = subscription.items.data[0];
+  const item = subscription.items.data.length === 1 ? subscription.items.data[0] : null;
   const interval = item?.price.recurring?.interval;
   const customerId = stripeObjectId(subscription.customer);
   const productId = item ? stripeObjectId(item.price.product) : null;
+  const priceId = item?.price.id;
   if (
     !accountId.success ||
-    !item ||
+    item?.quantity !== 1 ||
     !customerId ||
     !productId ||
+    !priceId ||
     (interval !== 'month' && interval !== 'year')
   ) {
     await getSql().query(
@@ -190,13 +427,37 @@ async function applyStripeSubscription(
       ON CONFLICT (provider, provider_event_id) DO NOTHING`,
       [event.id, payloadHash, event.type, event.created],
     );
-    return;
+    return false;
+  }
+  const configuredProduct = await getSql().query(
+    `SELECT id
+    FROM billing_product
+    WHERE provider = 'stripe'
+      AND provider_product_id = $1
+      AND provider_price_id = $2
+      AND billing_interval = $3
+      AND active = true`,
+    [productId, priceId, interval],
+  );
+  if (configuredProduct.length !== 1) {
+    await getSql().query(
+      `INSERT INTO provider_event (
+        provider, provider_event_id, payload_sha256, event_type,
+        provider_occurred_at, state, error_code, processed_at
+      ) VALUES (
+        'stripe', $1, decode($2, 'hex'), $3, to_timestamp($4),
+        'ignored', 'unconfigured_billing_product', now()
+      )
+      ON CONFLICT (provider, provider_event_id) DO NOTHING`,
+      [event.id, payloadHash, event.type, event.created],
+    );
+    return false;
   }
 
   const status = mapStripeStatus(subscription.status);
   const periodStart = item.current_period_start;
   const periodEnd = item.current_period_end;
-  await getSql().query(
+  const projection = await getSql().query(
     `WITH incoming AS (
       INSERT INTO provider_event (
         provider, provider_event_id, payload_sha256, event_type, provider_occurred_at
@@ -243,7 +504,8 @@ async function applyStripeSubscription(
       processed_at = now()
     WHERE pe.provider = 'stripe'
       AND pe.provider_event_id = $1
-      AND pe.state = 'received'`,
+      AND pe.state = 'received'
+    RETURNING state`,
     [
       event.id,
       payloadHash,
@@ -261,6 +523,7 @@ async function applyStripeSubscription(
       subscription.cancel_at_period_end,
     ],
   );
+  return projection[0]?.state === 'applied';
 }
 
 export async function processStripeWebhook(
@@ -282,8 +545,32 @@ export async function processStripeWebhook(
     event.type.startsWith('customer.subscription.') &&
     event.data.object.object === 'subscription'
   ) {
-    await applyStripeSubscription(event, event.data.object, payloadHash);
-    return { duplicateOrIgnored: false };
+    const applied = await applyStripeSubscription(
+      event,
+      event.data.object,
+      payloadHash,
+    );
+    return { duplicateOrIgnored: !applied };
+  }
+  if (event.data.object.object === 'invoice' && event.type.startsWith('invoice.')) {
+    const handledTypes = new Set([
+      'invoice.paid',
+      'invoice.payment_failed',
+      'invoice.payment_action_required',
+      'invoice.voided',
+    ]);
+    if (handledTypes.has(event.type)) {
+      const applied = await processStripeInvoiceEvent(
+        event,
+        event.data.object,
+        payloadHash,
+      );
+      return { duplicateOrIgnored: !applied };
+    }
+  }
+  const financialEventApplied = await processStripeFinancialEvent(event, payloadHash);
+  if (financialEventApplied !== null) {
+    return { duplicateOrIgnored: !financialEventApplied };
   }
   await getSql().query(
     `INSERT INTO provider_event (

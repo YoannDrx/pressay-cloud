@@ -81,6 +81,20 @@ const environmentSchema = z
       .string()
       .regex(/^(sk|rk)_(test|live)_/)
       .optional(),
+    STRIPE_EXPECTED_ACCOUNT_ID: z
+      .string()
+      .regex(/^acct_[A-Za-z0-9]+$/)
+      .optional(),
+    STRIPE_COMMERCIAL_LAUNCH_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    PRESSAY_PRO_CURRENCY: z
+      .string()
+      .regex(/^[a-z]{3}$/)
+      .default('eur'),
+    PRESSAY_PRO_MONTHLY_AMOUNT_MINOR: z.coerce.number().int().positive().default(799),
+    PRESSAY_PRO_ANNUAL_AMOUNT_MINOR: z.coerce.number().int().positive().default(6900),
     STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
     STRIPE_PRODUCT_PRO: z.string().startsWith('prod_').optional(),
     STRIPE_PRICE_PRO_MONTHLY: z.string().startsWith('price_').optional(),

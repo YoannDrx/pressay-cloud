@@ -1,5 +1,6 @@
 import pg from 'pg';
 
+import { auditStripeCatalogue } from '../src/billing/catalog-audit.js';
 import { getEnvironment, requireEnvironmentValue } from '../src/env.js';
 
 const environment = getEnvironment();
@@ -10,6 +11,7 @@ const pool = new pg.Pool({
 const client = await pool.connect();
 
 try {
+  await auditStripeCatalogue();
   await client.query('BEGIN');
   await client.query(
     "UPDATE billing_product SET active = false, updated_at = now() WHERE provider = 'stripe'",
