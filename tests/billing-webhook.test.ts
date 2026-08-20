@@ -27,7 +27,7 @@ const payload = JSON.stringify({
       object: 'subscription',
       customer: 'cus_pressay_1',
       metadata: {
-        pressay_account_id: '95e286b8-8bf9-4cf6-bf73-fc09361dc88c',
+        pressay_account_id: '00000000-0000-4000-8000-000000000001',
       },
       status: 'active',
       trial_end: null,

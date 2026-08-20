@@ -11,8 +11,8 @@ import { clearEnvironmentCacheForTests } from '../src/env.ts';
 import { bootstrapAccount, getUsage, listDevices } from '../src/services/accounts.ts';
 
 const authUserId = 'auth-user-1';
-const accountId = '95e286b8-8bf9-4cf6-bf73-fc09361dc88c';
-const deviceId = 'a2f99183-9727-4ec5-b0db-34388737dc81';
+const accountId = '00000000-0000-4000-8000-000000000001';
+const deviceId = '00000000-0000-4000-8000-000000000002';
 const deviceSecret = 'test-device-secret-that-is-at-least-32-characters';
 
 describe('account service', () => {

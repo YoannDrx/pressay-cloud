@@ -24,7 +24,7 @@ vi.mock('../src/services/rate-limits.ts', () => ({
 import app from '../src/app.ts';
 import { ApiError } from '../src/lib/errors.ts';
 
-const deviceId = 'a2f99183-9727-4ec5-b0db-34388737dc81';
+const deviceId = '00000000-0000-4000-8000-000000000002';
 
 describe('Cloud routes', () => {
   beforeEach(() => {

@@ -19,7 +19,7 @@ describe('usage reservations', () => {
   it('returns the database reservation contract', async () => {
     query.mockResolvedValueOnce([
       {
-        result_reservation_id: '17195ddc-a08d-4e0d-a7f1-06d7ccae48b0',
+        result_reservation_id: '00000000-0000-4000-8000-000000000003',
         result_status: 'reserved',
         result_units: 60,
         result_expires_at: '2026-08-17T00:10:00.000Z',
@@ -28,14 +28,14 @@ describe('usage reservations', () => {
     await expect(
       reserveUsage(
         'auth-user',
-        'a2f99183-9727-4ec5-b0db-34388737dc81',
+        '00000000-0000-4000-8000-000000000002',
         'cloud_transcription',
         60,
         'operation-idempotency-key',
         requestHash,
       ),
     ).resolves.toEqual({
-      id: '17195ddc-a08d-4e0d-a7f1-06d7ccae48b0',
+      id: '00000000-0000-4000-8000-000000000003',
       status: 'reserved',
       units: 60,
       expiresAt: '2026-08-17T00:10:00.000Z',
@@ -47,7 +47,7 @@ describe('usage reservations', () => {
     await expect(
       reserveUsage(
         'auth-user',
-        'a2f99183-9727-4ec5-b0db-34388737dc81',
+        '00000000-0000-4000-8000-000000000002',
         'cloud_transformation',
         1,
         'operation-idempotency-key',
@@ -58,7 +58,7 @@ describe('usage reservations', () => {
 
   it('claims a reserved operation exactly once before calling a provider', async () => {
     query.mockResolvedValueOnce([{ claimed: true }]);
-    await expect(claimUsage('17195ddc-a08d-4e0d-a7f1-06d7ccae48b0')).resolves.toBe(
+    await expect(claimUsage('00000000-0000-4000-8000-000000000003')).resolves.toBe(
       true,
     );
   });
@@ -66,7 +66,7 @@ describe('usage reservations', () => {
   it('settles a reservation idempotently through PostgreSQL', async () => {
     query.mockResolvedValueOnce([{ status: 'finalized' }]);
     await expect(
-      settleUsage('17195ddc-a08d-4e0d-a7f1-06d7ccae48b0', true, 'provider-operation'),
+      settleUsage('00000000-0000-4000-8000-000000000003', true, 'provider-operation'),
     ).resolves.toBe('finalized');
   });
 });

@@ -19,9 +19,9 @@ import {
   listSyncDevices,
 } from '../src/services/sync.ts';
 
-const accountId = '95e286b8-8bf9-4cf6-bf73-fc09361dc88c';
-const deviceId = 'a2f99183-9727-4ec5-b0db-34388737dc81';
-const objectId = '93eff87a-956a-49ec-b8d7-bf6dc28b98b0';
+const accountId = '00000000-0000-4000-8000-000000000001';
+const deviceId = '00000000-0000-4000-8000-000000000002';
+const objectId = '00000000-0000-4000-8000-000000000004';
 const envelope = Buffer.alloc(48, 7).toString('base64');
 const codeHash = Buffer.alloc(32, 9).toString('base64');
 
@@ -69,7 +69,7 @@ describe('E2EE sync', () => {
       approveSyncDevice(
         'auth-user',
         deviceId,
-        '22f2b8f5-110e-46b9-925d-dd3308be476c',
+        '00000000-0000-4000-8000-000000000005',
         envelope,
       ),
     ).resolves.toBeUndefined();

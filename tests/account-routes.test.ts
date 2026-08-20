@@ -89,9 +89,9 @@ describe('account routes', () => {
       session: { id: 'session' },
     });
     bootstrapAccount.mockResolvedValueOnce({
-      accountId: '95e286b8-8bf9-4cf6-bf73-fc09361dc88c',
+      accountId: '00000000-0000-4000-8000-000000000001',
       created: false,
-      deviceId: 'a2f99183-9727-4ec5-b0db-34388737dc81',
+      deviceId: '00000000-0000-4000-8000-000000000002',
       entitlement: {
         tier: 'pro',
         source: 'trial',
@@ -116,7 +116,7 @@ describe('account routes', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       created: false,
-      device: { id: 'a2f99183-9727-4ec5-b0db-34388737dc81' },
+      device: { id: '00000000-0000-4000-8000-000000000002' },
     });
   });
 });

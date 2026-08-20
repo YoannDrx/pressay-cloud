@@ -25,8 +25,8 @@ import {
   processCloudTranscription,
 } from '../src/services/cloud-processing.ts';
 
-const reservationId = '17195ddc-a08d-4e0d-a7f1-06d7ccae48b0';
-const deviceId = 'a2f99183-9727-4ec5-b0db-34388737dc81';
+const reservationId = '00000000-0000-4000-8000-000000000003';
+const deviceId = '00000000-0000-4000-8000-000000000002';
 
 function pcmWav(seconds: number): Buffer {
   const sampleRate = 16_000;

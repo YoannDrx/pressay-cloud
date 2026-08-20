@@ -13,8 +13,8 @@ const privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toStri
 const publicJwk = createPublicKey(privateKey).export({ format: 'jwk' });
 const now = Date.parse('2026-08-17T00:00:00.000Z') / 1000;
 const baseInput = {
-  accountId: '95e286b8-8bf9-4cf6-bf73-fc09361dc88c',
-  deviceId: 'a2f99183-9727-4ec5-b0db-34388737dc81',
+  accountId: '00000000-0000-4000-8000-000000000001',
+  deviceId: '00000000-0000-4000-8000-000000000002',
   usage: {
     periodStart: '2026-08-01',
     transcription: { usedSeconds: 42, reservedSeconds: 8, limitSeconds: 36000 },

@@ -13,7 +13,7 @@ vi.mock('../src/billing/stripe-client.ts', () => ({
 import { runAccountDeletionBatch } from '../src/services/account-deletion.ts';
 
 const job = {
-  account_id: '95e286b8-8bf9-4cf6-bf73-fc09361dc88c',
+  account_id: '00000000-0000-4000-8000-000000000001',
   auth_user_id: 'auth-user-to-delete',
   stripe_customer_id: 'cus_to_delete',
   attempts: 1,

@@ -52,7 +52,7 @@ describe('Stripe Checkout', () => {
     query
       .mockResolvedValueOnce([
         {
-          account_id: '95e286b8-8bf9-4cf6-bf73-fc09361dc88c',
+          account_id: '00000000-0000-4000-8000-000000000001',
           stripe_customer_id: null,
           provider_price_id: 'price_server_owned',
           trial_ends_at: null,
@@ -92,7 +92,7 @@ describe('Stripe Checkout', () => {
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO billing_legal_acceptance'),
       [
-        '95e286b8-8bf9-4cf6-bf73-fc09361dc88c',
+        '00000000-0000-4000-8000-000000000001',
         'checkout-idempotency-key',
         '2026-08-10',
         true,

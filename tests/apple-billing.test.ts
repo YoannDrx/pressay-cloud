@@ -23,7 +23,7 @@ import {
   restoreAppStorePurchase,
 } from '../src/services/apple-billing.ts';
 
-const accountId = '95e286b8-8bf9-4cf6-bf73-fc09361dc88c';
+const accountId = '00000000-0000-4000-8000-000000000001';
 const signedTransaction = `ey.${'a'.repeat(80)}.signature`;
 const productId = 'app.pressay.pro.monthly';
 const baseTransaction = {
@@ -86,7 +86,7 @@ describe('App Store billing', () => {
       environment: Environment.SANDBOX,
       transaction: {
         ...baseTransaction,
-        appAccountToken: '1419b580-f6ce-42f6-ac85-cb6ddf06443c',
+        appAccountToken: '00000000-0000-4000-8000-000000000099',
       },
     });
 
@@ -101,7 +101,7 @@ describe('App Store billing', () => {
   });
 
   it('verifies a V2 notification and projects it through unified billing state', async () => {
-    const notificationId = '9b613cbc-b831-4099-9c73-85bd108b7205';
+    const notificationId = '00000000-0000-4000-8000-000000000006';
     const signedPayload = `ey.${'b'.repeat(80)}.signature`;
     verifyAppleNotification.mockResolvedValue({
       environment: Environment.SANDBOX,
