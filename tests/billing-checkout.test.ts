@@ -55,7 +55,6 @@ describe('Stripe Checkout', () => {
           account_id: '00000000-0000-4000-8000-000000000001',
           stripe_customer_id: null,
           provider_price_id: 'price_server_owned',
-          trial_ends_at: null,
         },
       ])
       .mockResolvedValueOnce([]);
@@ -85,6 +84,9 @@ describe('Stripe Checkout', () => {
     );
     expect(createCheckoutSession.mock.calls[0]?.[0]).not.toHaveProperty(
       'payment_method_types',
+    );
+    expect(JSON.stringify(createCheckoutSession.mock.calls[0]?.[0])).not.toContain(
+      'trial_end',
     );
     expect(JSON.stringify(createCheckoutSession.mock.calls[0]?.[0])).toMatch(
       /"integration_identifier":"pressay_checkout_[a-z]{8}"/,

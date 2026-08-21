@@ -13,7 +13,6 @@ const checkoutContextSchema = z.object({
   account_id: z.uuid(),
   stripe_customer_id: z.string().nullable(),
   provider_price_id: z.string(),
-  trial_ends_at: z.coerce.date().nullable(),
 });
 
 function checkoutIntegrationIdentifier(): string {
@@ -28,8 +27,7 @@ async function getCheckoutContext(authUserId: string, interval: BillingInterval)
     `SELECT
       a.id AS account_id,
       customer.stripe_customer_id,
-      product.provider_price_id,
-      CASE WHEN e.source = 'trial' AND e.valid_until > now() THEN e.valid_until END AS trial_ends_at
+      product.provider_price_id
     FROM pressay_account a
     JOIN entitlement e ON e.account_id = a.id
     JOIN billing_product product
@@ -102,10 +100,6 @@ export async function createCheckout(
     context.account_id,
     context.stripe_customer_id,
   );
-  const now = Math.floor(Date.now() / 1000);
-  const trialEnd = context.trial_ends_at
-    ? Math.floor(context.trial_ends_at.getTime() / 1000)
-    : undefined;
   const session = await getStripe().checkout.sessions.create(
     {
       mode: 'subscription',
@@ -119,7 +113,6 @@ export async function createCheckout(
       metadata: { pressay_account_id: context.account_id },
       subscription_data: {
         metadata: { pressay_account_id: context.account_id },
-        ...(trialEnd && trialEnd >= now + 48 * 60 * 60 ? { trial_end: trialEnd } : {}),
       },
     },
     { idempotencyKey },
