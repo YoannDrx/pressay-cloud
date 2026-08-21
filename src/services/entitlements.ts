@@ -65,7 +65,7 @@ export async function signEntitlementSnapshot(
   })
     .setProtectedHeader({ alg: 'EdDSA', kid: resolvedKeyId, typ: 'JWT' })
     .setIssuer('https://api.press-say.app')
-    .setAudience(['app.pressay.desktop', 'app.pressay.desktop.mas'])
+    .setAudience(['app.pressay.desktop', 'fr.yodev.pressay'])
     .setSubject(input.accountId)
     .setIssuedAt(nowSeconds)
     .setExpirationTime(expiry)
