@@ -25,7 +25,8 @@ masking a wrong credential.
 Configure these items in both test and live settings where Stripe separates
 them:
 
-- business name: `Pressay by YoDev`;
+- public identity: `YoDev — Pressay` (while Stripe retains the required legal
+  entrepreneur identity for verification and invoices);
 - statement descriptor: a compliant Pressay descriptor confirmed in Stripe;
 - icon and square logo from the approved Pressay brand pack;
 - brand color and accent from the Signal OS design tokens;
@@ -74,7 +75,7 @@ webhook secret after any endpoint replacement.
 Before launch, use Stripe Test Clocks to prove:
 
 - checkout and duplicate submission;
-- trial conversion if a trial is offered;
+- confirmation that no trial is created by either launch price;
 - monthly and annual renewal;
 - payment failure, action required and recovery;
 - cancel now and cancel at period end;
