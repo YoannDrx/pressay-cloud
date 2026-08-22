@@ -1,6 +1,12 @@
 const baseUrl = (
-  process.env.PRESSAY_STAGING_BASE_URL ?? 'https://pressay-cloud-staging.vercel.app'
+  process.env.PRESSAY_STAGING_BASE_URL ?? 'https://api-staging.press-say.app'
 ).replace(/\/$/, '');
+const expectedAuthProviders = (
+  process.env.PRESSAY_EXPECTED_AUTH_PROVIDERS ?? 'google,apple'
+)
+  .split(',')
+  .map((provider) => provider.trim())
+  .filter(Boolean);
 const deploymentToken = process.env.PRESSAY_STAGING_AUTOMATION_BYPASS_SECRET;
 const expectedEntitlementPublicKey =
   process.env.PRESSAY_EXPECTED_ENTITLEMENT_PUBLIC_KEY ??
@@ -43,6 +49,15 @@ const checks: Check[] = [
       );
     },
   },
+  ...expectedAuthProviders.map((provider): Check => ({
+    name: `desktop auth provider: ${provider}`,
+    path: '/v1/desktop-auth/config',
+    expected: [200],
+    validate: (body) => {
+      const providers = (body as { providers?: unknown }).providers;
+      return Array.isArray(providers) && providers.includes(provider);
+    },
+  })),
   {
     name: 'entitlement signing key',
     path: '/v1/entitlements/jwks',

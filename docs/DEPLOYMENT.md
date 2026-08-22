@@ -2,13 +2,18 @@
 
 ## Environments
 
-The new control plane currently has one safe deployment target:
+The new control plane currently has one validated deployment target:
 
 - Vercel project: `pressay-cloud-staging`
 - URL: `https://pressay-cloud-staging.vercel.app`
 - Runtime: Node.js 22, Hono, region `fra1`
 - Database: Neon branch `br-flat-sun-asxuwkgv`, database `pressay_cloud`
 - Cloud processing: disabled by default
+
+The separate Vercel project `pressay-cloud-production` is reserved for the
+commercial control plane. It must not receive production traffic until it has
+an EU-hosted database, independent secrets, a verified `main` deployment and a
+recorded rollback target.
 
 The existing Vercel project `pressay-api` owns `https://api.press-say.app` and is
 outside this repository's deployment flow. Never link, deploy or move that
@@ -35,6 +40,8 @@ minimum, a deploy requires:
 - `PRESSAY_API_URL`
 - `PRESSAY_ALLOWED_ORIGINS`
 - `PRESSAY_CLOUD_PROCESSING_ENABLED=false`
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+- the complete Sign in with Apple credential set
 
 The staging cron secret also has an operator copy in the macOS Keychain under
 service `app.pressay.cloud.cron` and account `pressay-cloud-staging`. Secret
@@ -50,7 +57,7 @@ bun run release:prepare
 vercel inspect --logs <git-integrated-main-deployment>
 vercel curl /v1/health --deployment https://pressay-cloud-staging.vercel.app
 vercel curl /v1/ready --deployment https://pressay-cloud-staging.vercel.app
-bun run validate:staging
+PRESSAY_EXPECTED_AUTH_PROVIDERS=google,apple bun run validate:staging
 ```
 
 `build:deploy` rejects production deployments that are not attributed to a
