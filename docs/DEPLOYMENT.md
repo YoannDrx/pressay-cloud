@@ -10,23 +10,32 @@ The new control plane currently has one validated deployment target:
 - Database: Neon branch `br-flat-sun-asxuwkgv`, database `pressay_cloud`
 - Cloud processing: disabled by default
 
-The separate Vercel project `pressay-cloud-production` is reserved for the
-commercial control plane. It must not receive production traffic until it has
-an EU-hosted database, independent secrets, a verified `main` deployment and a
-recorded rollback target.
+The commercial control plane is isolated but not yet serving production traffic:
+
+- Vercel project: `pressay-cloud-production`
+- Vercel project ID: `prj_wjK1Ur48HVNXiNwgoPJKilFoCHem`
+- Git source: `YoannDrx/pressay-cloud`, production branch `main`
+- Runtime contract: Node.js 22 from `package.json`, Hono, region `fra1`
+- Neon project: `wandering-boat-94901475`, region `aws-eu-central-1`
+- Neon primary branch: `br-square-king-b224neq5`, database `pressay_cloud`
+- Pre-schema restore branch: `br-ancient-bird-b2mvkrex`
+- Schema: `0014_migrate_legacy_accounts.sql`
+- Cloud processing and Stripe commercial launch: disabled
+
+The Vercel project has independent production secrets and is connected to Git.
+Its first immutable `main` deployment must pass health, readiness, OAuth and
+rollback validation before the production domain is moved.
 
 The existing Vercel project `pressay-api` owns `https://api.press-say.app` and is
 outside this repository's deployment flow. Never link, deploy or move that
 domain from this checkout until the production cutover gate is approved.
 
-Git auto-deploy is intentionally not connected yet. Connecting it while the
-backend work is still a stack of pull requests could deploy an older default
-branch over the verified staging release. Enable it only after the stack is
-merged and Preview environment variables point to an isolated Neon branch.
+Preview deployments must not connect to the production database. Keep previews
+disabled or attach a dedicated Neon branch before enabling non-`main` Git deploys.
 
 ## Required variables
 
-Production variables on the staging project are encrypted in Vercel. At a
+Environment variables are encrypted in their respective Vercel projects. At a
 minimum, a deploy requires:
 
 - `DATABASE_URL`
