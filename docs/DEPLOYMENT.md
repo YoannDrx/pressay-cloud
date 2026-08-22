@@ -75,6 +75,16 @@ vercel curl /v1/ready --deployment https://pressay-cloud-staging.vercel.app
 PRESSAY_EXPECTED_AUTH_PROVIDERS=google,apple bun run validate:staging
 ```
 
+Before moving the canonical domain, validate the temporary deployment URL while
+keeping the configured callback explicit:
+
+```bash
+PRESSAY_STAGING_BASE_URL=https://pressay-cloud-staging.vercel.app \
+PRESSAY_EXPECTED_AUTH_CALLBACK_URL=https://api-staging.press-say.app/v1/desktop-auth/callback \
+PRESSAY_EXPECTED_AUTH_PROVIDERS=google,apple \
+bun run validate:staging
+```
+
 `build:deploy` rejects production deployments that are not attributed to a
 40-character commit on `main`. Manual production deploys are therefore blocked;
 use a Git-integrated immutable deployment and promote only after the migration
