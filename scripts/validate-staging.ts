@@ -7,6 +7,9 @@ const expectedAuthProviders = (
   .split(',')
   .map((provider) => provider.trim())
   .filter(Boolean);
+const expectedAuthCallbackUrl =
+  process.env.PRESSAY_EXPECTED_AUTH_CALLBACK_URL ??
+  `${baseUrl}/v1/desktop-auth/callback`;
 const deploymentToken = process.env.PRESSAY_STAGING_AUTOMATION_BYPASS_SECRET;
 const expectedEntitlementPublicKey =
   process.env.PRESSAY_EXPECTED_ENTITLEMENT_PUBLIC_KEY ??
@@ -45,7 +48,7 @@ const checks: Check[] = [
         typeof config.magicLink === 'boolean' &&
         Array.isArray(config.providers) &&
         typeof config.callbackUrl === 'string' &&
-        config.callbackUrl === `${baseUrl}/v1/desktop-auth/callback`
+        config.callbackUrl === expectedAuthCallbackUrl
       );
     },
   },
