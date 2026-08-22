@@ -7,7 +7,11 @@ The new control plane currently has one validated deployment target:
 - Vercel project: `pressay-cloud-staging`
 - URL: `https://pressay-cloud-staging.vercel.app`
 - Runtime: Node.js 22, Hono, region `fra1`
-- Database: Neon branch `br-flat-sun-asxuwkgv`, database `pressay_cloud`
+- Database: Neon project `snowy-meadow-52007899`, branch
+  `br-old-rain-asfu6s3y`, database `pressay`, schema
+  `0014_migrate_legacy_accounts.sql`
+- Branch parent/restore source: `br-plain-sunset-asxlyj0q`, validated before the
+  staging branch was created
 - Cloud processing: disabled by default
 
 The commercial control plane is isolated but not yet serving production traffic:
