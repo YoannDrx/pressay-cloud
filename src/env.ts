@@ -3,6 +3,9 @@ import { z } from 'zod';
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    PRESSAY_DEPLOYMENT_ENV: z
+      .enum(['development', 'staging', 'production'])
+      .default('development'),
     DATABASE_URL: z.url().startsWith('postgresql://'),
     DATABASE_URL_UNPOOLED: z.url().startsWith('postgresql://').optional(),
     PRESSAY_ALLOWED_ORIGINS: z.string().default('http://localhost:1420'),
