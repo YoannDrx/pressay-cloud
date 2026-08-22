@@ -33,12 +33,18 @@ domain from this checkout until the production cutover gate is approved.
 Preview deployments must not connect to the production database. Keep previews
 disabled or attach a dedicated Neon branch before enabling non-`main` Git deploys.
 
+Set `PRESSAY_DEPLOYMENT_ENV=staging` on the canonical staging project and
+`PRESSAY_DEPLOYMENT_ENV=production` on the customer-facing project. Vercel's own
+`VERCEL_ENV` value cannot distinguish these two deployments because each
+project's canonical deployment is reported as `production`.
+
 ## Required variables
 
 Environment variables are encrypted in their respective Vercel projects. At a
 minimum, a deploy requires:
 
 - `DATABASE_URL`
+- `PRESSAY_DEPLOYMENT_ENV`
 - `BETTER_AUTH_SECRET`
 - `DEVICE_IDENTIFIER_HMAC_SECRET`
 - `RATE_LIMIT_HMAC_SECRET`

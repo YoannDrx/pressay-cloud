@@ -10,7 +10,7 @@ export const healthRoutes = new Hono()
         status: 'ok',
         service: 'pressay-cloud',
         version: process.env.VERCEL_GIT_COMMIT_SHA ?? 'development',
-        environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
+        environment: process.env.PRESSAY_DEPLOYMENT_ENV ?? 'development',
       }),
     );
   })

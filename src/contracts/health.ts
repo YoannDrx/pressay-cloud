@@ -4,7 +4,7 @@ export const healthResponseSchema = z.object({
   status: z.literal('ok'),
   service: z.literal('pressay-cloud'),
   version: z.string(),
-  environment: z.string(),
+  environment: z.enum(['development', 'staging', 'production']),
 });
 
 export const readyResponseSchema = z.object({

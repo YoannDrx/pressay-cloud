@@ -10,10 +10,13 @@ vi.mock('../src/db/health.ts', () => ({
 }));
 
 import app from '../src/app.ts';
+import { clearEnvironmentCacheForTests } from '../src/env.ts';
 
 describe('Pressay Cloud API', () => {
   beforeEach(() => {
     process.env.PRESSAY_ALLOWED_ORIGINS = 'https://press-say.app';
+    process.env.PRESSAY_DEPLOYMENT_ENV = 'staging';
+    clearEnvironmentCacheForTests();
   });
 
   it('returns process health without touching user content', async () => {
@@ -22,6 +25,7 @@ describe('Pressay Cloud API', () => {
     expect(await response.json()).toMatchObject({
       service: 'pressay-cloud',
       status: 'ok',
+      environment: 'staging',
     });
     expect(response.headers.get('x-request-id')).toBeTruthy();
   });
