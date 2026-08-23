@@ -3,6 +3,7 @@ import { SignJWT } from 'jose';
 
 const getSession = vi.hoisted(() => vi.fn());
 const bootstrapAccount = vi.hoisted(() => vi.fn());
+const bootstrapWebAccount = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/auth.ts', () => ({
   getAuth: () => ({
@@ -15,6 +16,7 @@ vi.mock('../src/auth.ts', () => ({
 
 vi.mock('../src/services/accounts.ts', () => ({
   bootstrapAccount,
+  bootstrapWebAccount,
   getMe: vi.fn(),
   getUsage: vi.fn(),
   listDevices: vi.fn(),
@@ -29,6 +31,7 @@ describe('account routes', () => {
   beforeEach(() => {
     getSession.mockReset();
     bootstrapAccount.mockReset();
+    bootstrapWebAccount.mockReset();
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     process.env.PRESSAY_INTERNAL_JWT_ISSUER = 'https://press-say.app/internal';
     process.env.PRESSAY_INTERNAL_JWT_SECRET =
@@ -118,5 +121,35 @@ describe('account routes', () => {
       created: false,
       device: { id: '00000000-0000-4000-8000-000000000002' },
     });
+  });
+
+  it('bootstraps a Free web account without a device payload', async () => {
+    getSession.mockResolvedValueOnce({
+      user: { id: 'auth-user', email: 'person@example.com' },
+      session: { id: 'session' },
+    });
+    bootstrapWebAccount.mockResolvedValueOnce({
+      accountId: '00000000-0000-4000-8000-000000000001',
+      created: true,
+      entitlement: {
+        tier: 'free',
+        source: 'none',
+        validFrom: '2026-08-23T00:00:00.000Z',
+        validUntil: null,
+        offlineGraceUntil: null,
+        revision: 1,
+      },
+    });
+
+    const response = await app.request('/v1/accounts/web-bootstrap', {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      created: true,
+      entitlement: { tier: 'free', source: 'none' },
+    });
+    expect(bootstrapWebAccount).toHaveBeenCalledWith('auth-user');
   });
 });

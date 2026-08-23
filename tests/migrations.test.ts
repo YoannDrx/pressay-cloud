@@ -40,4 +40,23 @@ describe('database migrations', () => {
     expect(migration).not.toContain('stripe_customer_id');
     expect(migration).not.toContain('stripe_subscription_id');
   });
+
+  it('starts new native and web accounts on Free without consuming a web device slot', async () => {
+    const migration = await readFile(
+      new URL(
+        '../migrations/0015_free_bootstrap_and_web_accounts.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+
+    expect(migration).toContain('CREATE OR REPLACE FUNCTION bootstrap_pressay_account');
+    expect(migration).toContain('CREATE FUNCTION bootstrap_pressay_web_account');
+    expect(migration).toContain('INSERT INTO entitlement (account_id)');
+    expect(migration).not.toContain("'14 days'");
+    const webFunction = migration.split(
+      'CREATE FUNCTION bootstrap_pressay_web_account',
+    )[1];
+    expect(webFunction).not.toContain('INSERT INTO pressay_device');
+  });
 });

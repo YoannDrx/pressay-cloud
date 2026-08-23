@@ -5,6 +5,7 @@ import { z } from 'zod';
 import {
   bootstrapAccountRequestSchema,
   bootstrapAccountResponseSchema,
+  bootstrapWebAccountResponseSchema,
   deviceListResponseSchema,
   entitlementResponseSchema,
 } from '../contracts/account.js';
@@ -14,6 +15,7 @@ import { ApiError } from '../lib/errors.js';
 import {
   assertActiveDevice,
   bootstrapAccount,
+  bootstrapWebAccount,
   getMe,
   getUsage,
   listDevices,
@@ -58,6 +60,14 @@ accountRoutes.post(
     );
   },
 );
+
+accountRoutes.post('/accounts/web-bootstrap', async (context) => {
+  return context.json(
+    bootstrapWebAccountResponseSchema.parse(
+      await bootstrapWebAccount(context.get('authUserId')),
+    ),
+  );
+});
 
 accountRoutes.get('/me', async (context) => {
   return context.json(await getMe(context.get('authUserId'), context.get('authEmail')));
