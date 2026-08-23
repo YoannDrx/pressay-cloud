@@ -67,7 +67,7 @@ describe('Stripe webhook processing', () => {
 
   it('verifies the untouched body before applying subscription metadata', async () => {
     query
-      .mockResolvedValueOnce([{ id: 'stripe-pro-cloud-month' }])
+      .mockResolvedValueOnce([{ product_matches: true, customer_matches: true }])
       .mockResolvedValueOnce([{ state: 'applied' }]);
     const signature = stripe.webhooks.generateTestHeaderString({
       payload,
@@ -85,7 +85,9 @@ describe('Stripe webhook processing', () => {
   });
 
   it('ignores a signed subscription event for a Price outside the active catalogue', async () => {
-    query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    query
+      .mockResolvedValueOnce([{ product_matches: false, customer_matches: true }])
+      .mockResolvedValueOnce([]);
     const signature = stripe.webhooks.generateTestHeaderString({
       payload,
       secret: signingSecret,
@@ -96,9 +98,32 @@ describe('Stripe webhook processing', () => {
       duplicateOrIgnored: true,
     });
     expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('unconfigured_billing_product'),
-      expect.arrayContaining(['evt_pressay_subscription_1']),
+      expect.stringContaining("'ignored', $5"),
+      expect.arrayContaining([
+        'evt_pressay_subscription_1',
+        'unconfigured_billing_product',
+      ]),
     );
+  });
+
+  it('ignores a configured subscription when its Stripe customer belongs elsewhere', async () => {
+    query
+      .mockResolvedValueOnce([{ product_matches: true, customer_matches: false }])
+      .mockResolvedValueOnce([]);
+    const signature = stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: signingSecret,
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+
+    await expect(processStripeWebhook(payload, signature)).resolves.toEqual({
+      duplicateOrIgnored: true,
+    });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("'ignored', $5"),
+      expect.arrayContaining(['billing_customer_mismatch']),
+    );
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('ignores subscriptions containing more than one item', async () => {
@@ -148,7 +173,7 @@ describe('Stripe webhook processing', () => {
       },
     });
     query
-      .mockResolvedValueOnce([{ id: 'stripe-pro-cloud-month' }])
+      .mockResolvedValueOnce([{ product_matches: true, customer_matches: true }])
       .mockResolvedValueOnce([{ state: 'applied' }])
       .mockResolvedValueOnce([]);
     const signature = stripe.webhooks.generateTestHeaderString({
