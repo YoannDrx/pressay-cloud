@@ -128,6 +128,10 @@ describe('Stripe Checkout', () => {
       currentPeriodEndsAt: '2027-08-23T00:00:00.000Z',
       cancelAtPeriodEnd: false,
     });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('(provider = entitlement.source) DESC'),
+      ['auth-user'],
+    );
   });
 
   it('returns an empty subscription summary for a Free account', async () => {

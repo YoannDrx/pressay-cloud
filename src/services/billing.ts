@@ -152,6 +152,7 @@ export async function getBillingStatus(authUserId: string) {
       subscription.current_period_ends_at,
       subscription.cancel_at_period_end
     FROM pressay_account account
+    JOIN entitlement ON entitlement.account_id = account.id
     LEFT JOIN LATERAL (
       SELECT
         provider,
@@ -161,7 +162,10 @@ export async function getBillingStatus(authUserId: string) {
         cancel_at_period_end
       FROM billing_subscription
       WHERE account_id = account.id
-      ORDER BY provider_event_occurred_at DESC, updated_at DESC
+      ORDER BY
+        (provider = entitlement.source) DESC,
+        provider_event_occurred_at DESC,
+        updated_at DESC
       LIMIT 1
     ) subscription ON true
     WHERE account.auth_user_id = $1 AND account.status = 'active'`,
