@@ -422,27 +422,45 @@ async function applyStripeSubscription(
     );
     return false;
   }
-  const configuredProduct = await getSql().query(
-    `SELECT id
-    FROM billing_product
-    WHERE provider = 'stripe'
-      AND provider_product_id = $1
-      AND provider_price_id = $2
-      AND billing_interval = $3
-      AND active = true`,
-    [productId, priceId, interval],
-  );
-  if (configuredProduct.length !== 1) {
+  const trustContext = z
+    .object({ product_matches: z.boolean(), customer_matches: z.boolean() })
+    .parse(
+      (
+        await getSql().query(
+          `SELECT
+            EXISTS (
+              SELECT 1
+              FROM billing_product
+              WHERE provider = 'stripe'
+                AND provider_product_id = $1
+                AND provider_price_id = $2
+                AND billing_interval = $3
+                AND active = true
+            ) AS product_matches,
+            EXISTS (
+              SELECT 1
+              FROM billing_customer
+              WHERE account_id = $4
+                AND stripe_customer_id = $5
+            ) AS customer_matches`,
+          [productId, priceId, interval, accountId.data, customerId],
+        )
+      )[0],
+    );
+  if (!trustContext.product_matches || !trustContext.customer_matches) {
+    const errorCode = trustContext.product_matches
+      ? 'billing_customer_mismatch'
+      : 'unconfigured_billing_product';
     await getSql().query(
       `INSERT INTO provider_event (
         provider, provider_event_id, payload_sha256, event_type,
         provider_occurred_at, state, error_code, processed_at
       ) VALUES (
         'stripe', $1, decode($2, 'hex'), $3, to_timestamp($4),
-        'ignored', 'unconfigured_billing_product', now()
+        'ignored', $5, now()
       )
       ON CONFLICT (provider, provider_event_id) DO NOTHING`,
-      [event.id, payloadHash, event.type, event.created],
+      [event.id, payloadHash, event.type, event.created, errorCode],
     );
     return false;
   }
@@ -457,13 +475,6 @@ async function applyStripeSubscription(
       ) VALUES ('stripe', $1, decode($2, 'hex'), $3, to_timestamp($4))
       ON CONFLICT (provider, provider_event_id) DO NOTHING
       RETURNING provider_event_id
-    ), customer_upsert AS (
-      INSERT INTO billing_customer (account_id, stripe_customer_id)
-      SELECT $5, $6 FROM incoming
-      ON CONFLICT (account_id) DO UPDATE SET
-        stripe_customer_id = EXCLUDED.stripe_customer_id,
-        updated_at = now()
-      RETURNING account_id
     ), subscription_upsert AS (
       INSERT INTO billing_subscription (
         account_id, provider, provider_subscription_id, provider_product_id,
