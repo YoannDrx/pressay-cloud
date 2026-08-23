@@ -30,6 +30,17 @@ const bootstrapRowSchema = z.object({
   entitlement_revision: z.coerce.number().int().positive(),
 });
 
+const webBootstrapRowSchema = z.object({
+  account_id: z.uuid(),
+  account_created: z.boolean(),
+  entitlement_tier: z.enum(['free', 'pro']),
+  entitlement_source: z.enum(['none', 'trial', 'stripe', 'app_store', 'support']),
+  entitlement_valid_from: z.coerce.date(),
+  entitlement_valid_until: z.coerce.date().nullable(),
+  entitlement_offline_grace_until: z.coerce.date().nullable(),
+  entitlement_revision: z.coerce.number().int().positive(),
+});
+
 const deviceRowSchema = z.object({
   id: z.uuid(),
   display_name: z.string(),
@@ -142,6 +153,36 @@ export async function bootstrapAccount(
       accountId: row.account_id,
       created: row.account_created,
       deviceId: row.device_id,
+      entitlement: mapEntitlement(row),
+    };
+  } catch (error) {
+    return mapDatabaseConflict(error);
+  }
+}
+
+export async function bootstrapWebAccount(authUserId: string): Promise<{
+  accountId: string;
+  created: boolean;
+  entitlement: Entitlement;
+}> {
+  try {
+    const rows = await getSql().query(
+      `SELECT
+        result_account_id AS account_id,
+        result_account_created AS account_created,
+        result_entitlement_tier AS entitlement_tier,
+        result_entitlement_source AS entitlement_source,
+        result_entitlement_valid_from AS entitlement_valid_from,
+        result_entitlement_valid_until AS entitlement_valid_until,
+        result_entitlement_offline_grace_until AS entitlement_offline_grace_until,
+        result_entitlement_revision AS entitlement_revision
+      FROM bootstrap_pressay_web_account($1)`,
+      [authUserId],
+    );
+    const row = webBootstrapRowSchema.parse(rows[0]);
+    return {
+      accountId: row.account_id,
+      created: row.account_created,
       entitlement: mapEntitlement(row),
     };
   } catch (error) {

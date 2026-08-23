@@ -4,7 +4,7 @@ import type Stripe from 'stripe';
 import { z } from 'zod';
 
 import { getStripe } from '../billing/stripe-client.js';
-import type { BillingInterval } from '../contracts/billing.js';
+import { billingStatusSchema, type BillingInterval } from '../contracts/billing.js';
 import { getSql } from '../db/client.js';
 import { getEnvironment } from '../env.js';
 import { ApiError } from '../lib/errors.js';
@@ -141,6 +141,43 @@ export async function createBillingPortal(authUserId: string): Promise<string> {
     return_url: getEnvironment().STRIPE_PORTAL_RETURN_URL,
   });
   return session.url;
+}
+
+export async function getBillingStatus(authUserId: string) {
+  const rows = await getSql().query(
+    `SELECT
+      subscription.provider,
+      subscription.billing_interval,
+      subscription.status,
+      subscription.current_period_ends_at,
+      subscription.cancel_at_period_end
+    FROM pressay_account account
+    LEFT JOIN LATERAL (
+      SELECT
+        provider,
+        billing_interval,
+        status,
+        current_period_ends_at,
+        cancel_at_period_end
+      FROM billing_subscription
+      WHERE account_id = account.id
+      ORDER BY provider_event_occurred_at DESC, updated_at DESC
+      LIMIT 1
+    ) subscription ON true
+    WHERE account.auth_user_id = $1 AND account.status = 'active'`,
+    [authUserId],
+  );
+  const row = rows[0] as Record<string, unknown> | undefined;
+  if (!row) throw new ApiError(404, 'account_not_found', 'Account not found');
+  return billingStatusSchema.parse({
+    provider: row.provider ?? null,
+    interval: row.billing_interval ?? null,
+    status: row.status ?? null,
+    currentPeriodEndsAt: row.current_period_ends_at
+      ? new Date(row.current_period_ends_at as string).toISOString()
+      : null,
+    cancelAtPeriodEnd: row.cancel_at_period_end ?? false,
+  });
 }
 
 function stripeObjectId(value: string | { id: string } | null): string | null {

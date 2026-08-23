@@ -8,7 +8,12 @@ vi.mock('../src/db/client.ts', () => ({
 }));
 
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
-import { bootstrapAccount, getUsage, listDevices } from '../src/services/accounts.ts';
+import {
+  bootstrapAccount,
+  bootstrapWebAccount,
+  getUsage,
+  listDevices,
+} from '../src/services/accounts.ts';
 
 const authUserId = 'auth-user-1';
 const accountId = '00000000-0000-4000-8000-000000000001';
@@ -70,6 +75,32 @@ describe('account service', () => {
         appVersion: '2.0.0',
       }),
     ).rejects.toMatchObject({ status: 409, code: 'device_limit_reached' });
+  });
+
+  it('bootstraps web access without a device identifier', async () => {
+    query.mockResolvedValueOnce([
+      {
+        account_id: accountId,
+        account_created: true,
+        entitlement_tier: 'free',
+        entitlement_source: 'none',
+        entitlement_valid_from: '2026-08-23T00:00:00.000Z',
+        entitlement_valid_until: null,
+        entitlement_offline_grace_until: null,
+        entitlement_revision: '1',
+      },
+    ]);
+
+    await expect(bootstrapWebAccount(authUserId)).resolves.toMatchObject({
+      accountId,
+      created: true,
+      entitlement: { tier: 'free', source: 'none' },
+    });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('bootstrap_pressay_web_account'),
+      [authUserId],
+    );
+    expect(JSON.stringify(query.mock.calls)).not.toContain('device_identifier');
   });
 
   it('returns only safe device metadata', async () => {

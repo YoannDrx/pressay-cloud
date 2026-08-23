@@ -38,4 +38,6 @@ export const billingStatusSchema = z.strictObject({
   cancelAtPeriodEnd: z.boolean(),
 });
 
+export type BillingStatus = z.infer<typeof billingStatusSchema>;
+
 export type BillingInterval = z.infer<typeof checkoutRequestSchema>['interval'];

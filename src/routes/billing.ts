@@ -12,6 +12,7 @@ import { ApiError } from '../lib/errors.js';
 import {
   createBillingPortal,
   createCheckout,
+  getBillingStatus,
   processStripeWebhook,
 } from '../services/billing.js';
 import {
@@ -62,6 +63,10 @@ billingRoutes.post('/billing/portal', async (context) => {
     }),
     201,
   );
+});
+
+billingRoutes.get('/billing/status', async (context) => {
+  return context.json(await getBillingStatus(context.get('authUserId')));
 });
 
 billingRoutes.post(

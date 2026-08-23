@@ -44,6 +44,12 @@ export const bootstrapAccountResponseSchema = z.strictObject({
   entitlement: entitlementSchema,
 });
 
+export const bootstrapWebAccountResponseSchema = z.strictObject({
+  accountId: uuid,
+  created: z.boolean(),
+  entitlement: entitlementSchema,
+});
+
 export const meResponseSchema = z.strictObject({
   accountId: uuid,
   email: z.email(),

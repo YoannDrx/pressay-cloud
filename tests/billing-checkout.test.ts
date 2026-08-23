@@ -15,7 +15,7 @@ vi.mock('../src/billing/stripe-client.ts', () => ({
 }));
 
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
-import { createCheckout } from '../src/services/billing.ts';
+import { createCheckout, getBillingStatus } from '../src/services/billing.ts';
 
 describe('Stripe Checkout', () => {
   beforeEach(() => {
@@ -101,5 +101,45 @@ describe('Stripe Checkout', () => {
         true,
       ],
     );
+  });
+
+  it('returns a server-authoritative subscription summary', async () => {
+    query.mockResolvedValueOnce([
+      {
+        provider: 'stripe',
+        billing_interval: 'year',
+        status: 'active',
+        current_period_ends_at: '2027-08-23T00:00:00.000Z',
+        cancel_at_period_end: false,
+      },
+    ]);
+
+    await expect(getBillingStatus('auth-user')).resolves.toEqual({
+      provider: 'stripe',
+      interval: 'year',
+      status: 'active',
+      currentPeriodEndsAt: '2027-08-23T00:00:00.000Z',
+      cancelAtPeriodEnd: false,
+    });
+  });
+
+  it('returns an empty subscription summary for a Free account', async () => {
+    query.mockResolvedValueOnce([
+      {
+        provider: null,
+        billing_interval: null,
+        status: null,
+        current_period_ends_at: null,
+        cancel_at_period_end: null,
+      },
+    ]);
+
+    await expect(getBillingStatus('auth-user')).resolves.toEqual({
+      provider: null,
+      interval: null,
+      status: null,
+      currentPeriodEndsAt: null,
+      cancelAtPeriodEnd: false,
+    });
   });
 });
