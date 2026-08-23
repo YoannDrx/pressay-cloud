@@ -84,7 +84,7 @@ describe('Stripe Checkout', () => {
     expect(createCheckoutSession).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'subscription',
-        integration_identifier: 'pressay_direct_v1',
+        integration_identifier: 'pressay_direct_v1_vkmrqjtp',
         customer: 'cus_pressay',
         line_items: [{ price: 'price_server_owned', quantity: 1 }],
       }),

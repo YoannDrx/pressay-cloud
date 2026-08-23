@@ -15,7 +15,7 @@ const checkoutContextSchema = z.object({
   provider_price_id: z.string(),
 });
 
-const CHECKOUT_INTEGRATION_IDENTIFIER = 'pressay_direct_v1';
+const CHECKOUT_INTEGRATION_IDENTIFIER = 'pressay_direct_v1_vkmrqjtp';
 
 function stripeCheckoutIdempotencyKey(accountId: string, clientKey: string): string {
   const digest = createHash('sha256').update(clientKey).digest('hex');
