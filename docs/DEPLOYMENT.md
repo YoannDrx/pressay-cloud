@@ -59,8 +59,12 @@ minimum, a deploy requires:
 - `PRESSAY_API_URL`
 - `PRESSAY_ALLOWED_ORIGINS`
 - `PRESSAY_CLOUD_PROCESSING_ENABLED=false`
-- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
-- the complete Sign in with Apple credential set
+- the complete Sign in with Apple credential set used by the Cloud-native flow
+
+Google desktop login is served by the OAuth 2.1 issuer on `press-say.app` and
+its credentials belong to `pressay-web`, not this project. Do not duplicate the
+Google client secret into Cloud merely to make `/desktop-auth/config` advertise
+Google. The staging validator probes the issuer metadata separately.
 
 The staging cron secret also has an operator copy in the macOS Keychain under
 service `app.pressay.cloud.cron` and account `pressay-cloud-staging`. Secret
@@ -76,7 +80,7 @@ bun run release:prepare
 vercel inspect --logs <git-integrated-main-deployment>
 vercel curl /v1/health --deployment https://pressay-cloud-staging.vercel.app
 vercel curl /v1/ready --deployment https://pressay-cloud-staging.vercel.app
-PRESSAY_EXPECTED_AUTH_PROVIDERS=google,apple bun run validate:staging
+PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS=apple bun run validate:staging
 ```
 
 Before moving the canonical domain, validate the temporary deployment URL while
@@ -85,7 +89,7 @@ keeping the configured callback explicit:
 ```bash
 PRESSAY_STAGING_BASE_URL=https://pressay-cloud-staging.vercel.app \
 PRESSAY_EXPECTED_AUTH_CALLBACK_URL=https://api-staging.press-say.app/v1/desktop-auth/callback \
-PRESSAY_EXPECTED_AUTH_PROVIDERS=google,apple \
+PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS=apple \
 bun run validate:staging
 ```
 
