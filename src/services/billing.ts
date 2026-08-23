@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import type Stripe from 'stripe';
 import { z } from 'zod';
@@ -15,11 +15,11 @@ const checkoutContextSchema = z.object({
   provider_price_id: z.string(),
 });
 
-function checkoutIntegrationIdentifier(): string {
-  const suffix = Array.from(randomBytes(8), (byte) =>
-    String.fromCharCode(97 + (byte % 26)),
-  ).join('');
-  return `pressay_checkout_${suffix}`;
+const CHECKOUT_INTEGRATION_IDENTIFIER = 'pressay_direct_v1';
+
+function stripeCheckoutIdempotencyKey(accountId: string, clientKey: string): string {
+  const digest = createHash('sha256').update(clientKey).digest('hex');
+  return `pressay-checkout/${accountId}/${digest}`;
 }
 
 async function getCheckoutContext(authUserId: string, interval: BillingInterval) {
@@ -103,7 +103,7 @@ export async function createCheckout(
   const session = await getStripe().checkout.sessions.create(
     {
       mode: 'subscription',
-      integration_identifier: checkoutIntegrationIdentifier(),
+      integration_identifier: CHECKOUT_INTEGRATION_IDENTIFIER,
       customer: customerId,
       line_items: [{ price: context.provider_price_id, quantity: 1 }],
       success_url: environment.STRIPE_CHECKOUT_SUCCESS_URL,
@@ -115,7 +115,9 @@ export async function createCheckout(
         metadata: { pressay_account_id: context.account_id },
       },
     },
-    { idempotencyKey },
+    {
+      idempotencyKey: stripeCheckoutIdempotencyKey(context.account_id, idempotencyKey),
+    },
   );
   if (!session.url)
     throw new ApiError(503, 'stripe_session_unavailable', 'Checkout is unavailable');

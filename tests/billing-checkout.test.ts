@@ -77,19 +77,20 @@ describe('Stripe Checkout', () => {
     expect(createCheckoutSession).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'subscription',
+        integration_identifier: 'pressay_direct_v1',
         customer: 'cus_pressay',
         line_items: [{ price: 'price_server_owned', quantity: 1 }],
       }),
-      { idempotencyKey: 'checkout-idempotency-key' },
+      {
+        idempotencyKey:
+          'pressay-checkout/00000000-0000-4000-8000-000000000001/69c4e343c7dbc4bb518ac785a37d919af0e1dea377cf57d063f70d52bb7dd9d4',
+      },
     );
     expect(createCheckoutSession.mock.calls[0]?.[0]).not.toHaveProperty(
       'payment_method_types',
     );
     expect(JSON.stringify(createCheckoutSession.mock.calls[0]?.[0])).not.toContain(
       'trial_end',
-    );
-    expect(JSON.stringify(createCheckoutSession.mock.calls[0]?.[0])).toMatch(
-      /"integration_identifier":"pressay_checkout_[a-z]{8}"/,
     );
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('INSERT INTO billing_legal_acceptance'),
