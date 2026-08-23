@@ -11,6 +11,7 @@ export interface StripeCatalogueAudit {
   monthlyPriceId: string;
   annualPriceId: string;
   currency: string;
+  livemode: boolean;
 }
 
 function objectId(value: string | { id: string }): string {
@@ -37,6 +38,7 @@ export async function auditStripeCatalogue(
     environment.STRIPE_PRICE_PRO_ANNUAL,
     'STRIPE_PRICE_PRO_ANNUAL',
   );
+  const expectedLivemode = environment.PRESSAY_DEPLOYMENT_ENV === 'production';
 
   const [account, product, monthly, annual] = await Promise.all([
     // With no ID, Stripe returns the account represented by the API key. Using
@@ -51,7 +53,11 @@ export async function auditStripeCatalogue(
   if (account.id !== expectedAccountId) {
     throw new Error('Stripe credentials do not belong to the expected Pressay account');
   }
-  if (!product.active || product.name !== 'Pressay Pro') {
+  if (
+    !product.active ||
+    product.name !== 'Pressay Pro' ||
+    product.livemode !== expectedLivemode
+  ) {
     throw new Error('Stripe Product must be the active Pressay Pro catalogue entry');
   }
 
@@ -61,6 +67,7 @@ export async function auditStripeCatalogue(
   ] as const) {
     if (
       !price.active ||
+      price.livemode !== expectedLivemode ||
       objectId(price.product) !== product.id ||
       price.currency !== environment.PRESSAY_PRO_CURRENCY ||
       price.unit_amount !== expectedAmount ||
@@ -77,5 +84,6 @@ export async function auditStripeCatalogue(
     monthlyPriceId: monthly.id,
     annualPriceId: annual.id,
     currency: environment.PRESSAY_PRO_CURRENCY,
+    livemode: expectedLivemode,
   };
 }

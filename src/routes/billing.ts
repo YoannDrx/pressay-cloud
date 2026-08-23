@@ -9,6 +9,7 @@ import {
 } from '../contracts/billing.js';
 import { requireAuthentication } from '../lib/auth-middleware.js';
 import { ApiError } from '../lib/errors.js';
+import { writeLog } from '../lib/logger.js';
 import {
   createBillingPortal,
   createCheckout,
@@ -109,7 +110,11 @@ billingRoutes.post('/webhooks/stripe', async (context) => {
   if (Buffer.byteLength(rawBody, 'utf8') > 1_048_576) {
     throw new ApiError(422, 'webhook_too_large', 'Webhook payload is too large');
   }
-  await processStripeWebhook(rawBody, signature);
+  const result = await processStripeWebhook(rawBody, signature);
+  writeLog('info', 'billing.webhook.completed', {
+    outcome: result.duplicateOrIgnored ? 'ignored' : 'applied',
+    provider: 'stripe',
+  });
   return context.json({ received: true });
 });
 
@@ -122,6 +127,10 @@ billingRoutes.post('/webhooks/apple', async (context) => {
   if (Buffer.byteLength(rawBody, 'utf8') > 1_048_576) {
     throw new ApiError(422, 'webhook_too_large', 'Webhook payload is too large');
   }
-  await processAppleWebhook(rawBody);
+  const result = await processAppleWebhook(rawBody);
+  writeLog('info', 'billing.webhook.completed', {
+    outcome: result.duplicateOrIgnored ? 'ignored' : 'applied',
+    provider: 'apple',
+  });
   return context.json({ received: true });
 });

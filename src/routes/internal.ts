@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 
 import { getEnvironment, requireEnvironmentValue } from '../env.js';
 import { ApiError } from '../lib/errors.js';
+import { writeLog } from '../lib/logger.js';
 import { runAccountDeletionBatch } from '../services/account-deletion.js';
 import { cleanupExpiredRateLimitBuckets } from '../services/rate-limits.js';
 import type { AppEnvironment } from '../types.js';
@@ -14,6 +15,12 @@ internalRoutes.get('/internal/jobs/account-deletions', async (context) => {
   requireInternalSecret(context.req.header('authorization'));
   const deletions = await runAccountDeletionBatch(10);
   const rateLimitBucketsDeleted = await cleanupExpiredRateLimitBuckets();
+  writeLog('info', 'account_deletions.completed', {
+    claimed: deletions.claimed,
+    completed: deletions.completed,
+    failed: deletions.failed,
+    rate_limit_buckets_deleted: rateLimitBucketsDeleted,
+  });
   return context.json({ ...deletions, rateLimitBucketsDeleted });
 });
 

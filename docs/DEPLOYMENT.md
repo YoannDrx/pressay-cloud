@@ -42,6 +42,13 @@ Set `PRESSAY_DEPLOYMENT_ENV=staging` on the canonical staging project and
 `VERCEL_ENV` value cannot distinguish these two deployments because each
 project's canonical deployment is reported as `production`.
 
+Both canonical environments are also pinned to Vercel's system-provided
+`VERCEL_PROJECT_ID`. Staging accepts only project
+`prj_QKq9S0LqVbPQD6qvFZDiVNldSzLE`; production accepts only
+`prj_wjK1Ur48HVNXiNwgoPJKilFoCHem`. Keep automatic system environment variables
+enabled in both projects. A missing or mismatched project ID fails the build and
+runtime environment validation.
+
 ## Required variables
 
 Environment variables are encrypted in their respective Vercel projects. At a
@@ -65,6 +72,24 @@ Google desktop login is served by the OAuth 2.1 issuer on `press-say.app` and
 its credentials belong to `pressay-web`, not this project. Do not duplicate the
 Google client secret into Cloud merely to make `/desktop-auth/config` advertise
 Google. The staging validator probes the issuer metadata separately.
+
+Stripe credentials are pinned to the declared Pressay environment. Canonical
+staging accepts only a restricted `rk_test_` key and Stripe test-mode Product
+and Price objects. Production accepts only a restricted `rk_live_` key and
+live-mode catalogue objects. Development rejects live keys. The environment
+parser fails closed if commercial launch is enabled outside production or if
+the key, expected account, webhook secret, Product, monthly Price or annual
+Price is missing. Standard `sk_` keys are not valid for canonical deployments.
+
+Provision and audit the staging catalogue in Stripe test mode before merging a
+change that activates these boundaries. Do the same independently for live
+production. Never copy live Price IDs into staging, even though Stripe uses the
+same account ID in both modes.
+
+App Store verification follows the same boundary: development and staging
+accept only Apple Sandbox transactions and notifications; production accepts
+only Apple Production payloads. Do not send Sandbox notifications to the
+production webhook or Production notifications to staging.
 
 The staging cron secret also has an operator copy in the macOS Keychain under
 service `app.pressay.cloud.cron` and account `pressay-cloud-staging`. Secret
@@ -92,6 +117,10 @@ PRESSAY_EXPECTED_AUTH_CALLBACK_URL=https://api-staging.press-say.app/v1/desktop-
 PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS=apple \
 bun run validate:staging
 ```
+
+`release:prepare` includes `billing:audit`; therefore it must run inside the
+intended Vercel/secret context. Sensitive Vercel variables are write-only and
+must not be exported into a local `.env` file as a workaround.
 
 `build:deploy` rejects production deployments that are not attributed to a
 40-character commit on `main`. Manual production deploys are therefore blocked;

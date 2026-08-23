@@ -123,4 +123,5 @@ later without changing the verification commands.
   account encryption key.
 
 See [SECURITY.md](SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Operational recovery procedures are
+kept in [docs/OPERATIONS.md](docs/OPERATIONS.md).

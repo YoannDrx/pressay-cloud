@@ -103,12 +103,18 @@ function getRuntime(
   return runtime;
 }
 
+export function appleVerificationTargetsFor(
+  deploymentEnvironment: ReturnType<typeof getEnvironment>['PRESSAY_DEPLOYMENT_ENV'],
+): readonly (Environment.PRODUCTION | Environment.SANDBOX)[] {
+  return deploymentEnvironment === 'production'
+    ? [Environment.PRODUCTION]
+    : [Environment.SANDBOX];
+}
+
 function verificationTargets(): readonly (
   Environment.PRODUCTION | Environment.SANDBOX
 )[] {
-  return getEnvironment().APP_STORE_APP_APPLE_ID
-    ? [Environment.PRODUCTION, Environment.SANDBOX]
-    : [Environment.SANDBOX];
+  return appleVerificationTargetsFor(getEnvironment().PRESSAY_DEPLOYMENT_ENV);
 }
 
 export async function verifyAppleTransaction(

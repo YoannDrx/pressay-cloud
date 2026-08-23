@@ -23,7 +23,14 @@ describe('Stripe Checkout', () => {
     createCustomer.mockReset();
     createCheckoutSession.mockReset();
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
+    process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
     process.env.STRIPE_COMMERCIAL_LAUNCH_ENABLED = 'true';
+    process.env.STRIPE_SECRET_KEY = 'rk_live_placeholder';
+    process.env.STRIPE_EXPECTED_ACCOUNT_ID = 'acct_pressay';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_placeholder';
+    process.env.STRIPE_PRODUCT_PRO = 'prod_pressay';
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_monthly';
+    process.env.STRIPE_PRICE_PRO_ANNUAL = 'price_annual';
     clearEnvironmentCacheForTests();
   });
 
@@ -77,7 +84,7 @@ describe('Stripe Checkout', () => {
     expect(createCheckoutSession).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'subscription',
-        integration_identifier: 'pressay_direct_v1',
+        integration_identifier: 'pressay_direct_v1_vkmrqjtp',
         customer: 'cus_pressay',
         line_items: [{ price: 'price_server_owned', quantity: 1 }],
       }),
@@ -121,6 +128,10 @@ describe('Stripe Checkout', () => {
       currentPeriodEndsAt: '2027-08-23T00:00:00.000Z',
       cancelAtPeriodEnd: false,
     });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('(provider = entitlement.source) DESC'),
+      ['auth-user'],
+    );
   });
 
   it('returns an empty subscription summary for a Free account', async () => {

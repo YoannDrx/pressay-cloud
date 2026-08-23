@@ -3,6 +3,8 @@ import { z } from 'zod';
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    VERCEL: z.literal('1').optional(),
+    VERCEL_PROJECT_ID: z.string().startsWith('prj_').optional(),
     PRESSAY_DEPLOYMENT_ENV: z
       .enum(['development', 'staging', 'production'])
       .default('development'),
@@ -121,6 +123,81 @@ const environmentSchema = z
         path: ['PRESSAY_BETTER_AUTH_JWKS_URL'],
         message: 'Better Auth issuer and JWKS URL must be configured together',
       });
+    }
+
+    const canonicalVercelProjectIds = {
+      staging: 'prj_QKq9S0LqVbPQD6qvFZDiVNldSzLE',
+      production: 'prj_wjK1Ur48HVNXiNwgoPJKilFoCHem',
+    } as const;
+    if (
+      environment.VERCEL === '1' &&
+      environment.PRESSAY_DEPLOYMENT_ENV !== 'development'
+    ) {
+      const expectedProjectId =
+        canonicalVercelProjectIds[environment.PRESSAY_DEPLOYMENT_ENV];
+      if (environment.VERCEL_PROJECT_ID !== expectedProjectId) {
+        context.addIssue({
+          code: 'custom',
+          path: ['VERCEL_PROJECT_ID'],
+          message: `${environment.PRESSAY_DEPLOYMENT_ENV} is bound to its canonical Vercel project`,
+        });
+      }
+    }
+
+    const stripeKey = environment.STRIPE_SECRET_KEY;
+    if (stripeKey) {
+      const canonicalKeyPrefix =
+        environment.PRESSAY_DEPLOYMENT_ENV === 'staging'
+          ? 'rk_test_'
+          : environment.PRESSAY_DEPLOYMENT_ENV === 'production'
+            ? 'rk_live_'
+            : undefined;
+
+      if (canonicalKeyPrefix && !stripeKey.startsWith(canonicalKeyPrefix)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['STRIPE_SECRET_KEY'],
+          message: `${environment.PRESSAY_DEPLOYMENT_ENV} must use a restricted ${canonicalKeyPrefix.includes('_test_') ? 'test' : 'live'} Stripe key`,
+        });
+      }
+
+      if (
+        environment.PRESSAY_DEPLOYMENT_ENV === 'development' &&
+        stripeKey.includes('_live_')
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['STRIPE_SECRET_KEY'],
+          message: 'development must not use a live Stripe key',
+        });
+      }
+    }
+
+    if (environment.STRIPE_COMMERCIAL_LAUNCH_ENABLED) {
+      if (environment.PRESSAY_DEPLOYMENT_ENV !== 'production') {
+        context.addIssue({
+          code: 'custom',
+          path: ['STRIPE_COMMERCIAL_LAUNCH_ENABLED'],
+          message: 'commercial Stripe launch is allowed only in production',
+        });
+      }
+
+      for (const [name, value] of [
+        ['STRIPE_SECRET_KEY', environment.STRIPE_SECRET_KEY],
+        ['STRIPE_EXPECTED_ACCOUNT_ID', environment.STRIPE_EXPECTED_ACCOUNT_ID],
+        ['STRIPE_WEBHOOK_SECRET', environment.STRIPE_WEBHOOK_SECRET],
+        ['STRIPE_PRODUCT_PRO', environment.STRIPE_PRODUCT_PRO],
+        ['STRIPE_PRICE_PRO_MONTHLY', environment.STRIPE_PRICE_PRO_MONTHLY],
+        ['STRIPE_PRICE_PRO_ANNUAL', environment.STRIPE_PRICE_PRO_ANNUAL],
+      ] as const) {
+        if (!value) {
+          context.addIssue({
+            code: 'custom',
+            path: [name],
+            message: `${name} is required when commercial Stripe launch is enabled`,
+          });
+        }
+      }
     }
   });
 
