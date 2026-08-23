@@ -42,6 +42,13 @@ Set `PRESSAY_DEPLOYMENT_ENV=staging` on the canonical staging project and
 `VERCEL_ENV` value cannot distinguish these two deployments because each
 project's canonical deployment is reported as `production`.
 
+Both canonical environments are also pinned to Vercel's system-provided
+`VERCEL_PROJECT_ID`. Staging accepts only project
+`prj_QKq9S0LqVbPQD6qvFZDiVNldSzLE`; production accepts only
+`prj_wjK1Ur48HVNXiNwgoPJKilFoCHem`. Keep automatic system environment variables
+enabled in both projects. A missing or mismatched project ID fails the build and
+runtime environment validation.
+
 ## Required variables
 
 Environment variables are encrypted in their respective Vercel projects. At a

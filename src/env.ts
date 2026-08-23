@@ -3,6 +3,8 @@ import { z } from 'zod';
 const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    VERCEL: z.literal('1').optional(),
+    VERCEL_PROJECT_ID: z.string().startsWith('prj_').optional(),
     PRESSAY_DEPLOYMENT_ENV: z
       .enum(['development', 'staging', 'production'])
       .default('development'),
@@ -121,6 +123,25 @@ const environmentSchema = z
         path: ['PRESSAY_BETTER_AUTH_JWKS_URL'],
         message: 'Better Auth issuer and JWKS URL must be configured together',
       });
+    }
+
+    const canonicalVercelProjectIds = {
+      staging: 'prj_QKq9S0LqVbPQD6qvFZDiVNldSzLE',
+      production: 'prj_wjK1Ur48HVNXiNwgoPJKilFoCHem',
+    } as const;
+    if (
+      environment.VERCEL === '1' &&
+      environment.PRESSAY_DEPLOYMENT_ENV !== 'development'
+    ) {
+      const expectedProjectId =
+        canonicalVercelProjectIds[environment.PRESSAY_DEPLOYMENT_ENV];
+      if (environment.VERCEL_PROJECT_ID !== expectedProjectId) {
+        context.addIssue({
+          code: 'custom',
+          path: ['VERCEL_PROJECT_ID'],
+          message: `${environment.PRESSAY_DEPLOYMENT_ENV} is bound to its canonical Vercel project`,
+        });
+      }
     }
 
     const stripeKey = environment.STRIPE_SECRET_KEY;

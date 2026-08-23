@@ -54,6 +54,26 @@ describe('environment', () => {
     ).toBe('rk_test_placeholder');
   });
 
+  it('binds canonical environments to their Vercel projects', () => {
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'staging',
+        VERCEL: '1',
+        VERCEL_PROJECT_ID: 'prj_wrong',
+      }),
+    ).toThrow('staging is bound to its canonical Vercel project');
+
+    expect(
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'production',
+        VERCEL: '1',
+        VERCEL_PROJECT_ID: 'prj_wjK1Ur48HVNXiNwgoPJKilFoCHem',
+      }).PRESSAY_DEPLOYMENT_ENV,
+    ).toBe('production');
+  });
+
   it('pins production to a restricted Stripe live key', () => {
     expect(() =>
       getEnvironment({
