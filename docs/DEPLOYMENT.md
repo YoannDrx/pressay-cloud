@@ -86,6 +86,11 @@ change that activates these boundaries. Do the same independently for live
 production. Never copy live Price IDs into staging, even though Stripe uses the
 same account ID in both modes.
 
+App Store verification follows the same boundary: development and staging
+accept only Apple Sandbox transactions and notifications; production accepts
+only Apple Production payloads. Do not send Sandbox notifications to the
+production webhook or Production notifications to staging.
+
 The staging cron secret also has an operator copy in the macOS Keychain under
 service `app.pressay.cloud.cron` and account `pressay-cloud-staging`. Secret
 values must never be placed in shell history, GitHub, documentation or logs.
