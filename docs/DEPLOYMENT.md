@@ -66,6 +66,19 @@ its credentials belong to `pressay-web`, not this project. Do not duplicate the
 Google client secret into Cloud merely to make `/desktop-auth/config` advertise
 Google. The staging validator probes the issuer metadata separately.
 
+Stripe credentials are pinned to the declared Pressay environment. Canonical
+staging accepts only a restricted `rk_test_` key and Stripe test-mode Product
+and Price objects. Production accepts only a restricted `rk_live_` key and
+live-mode catalogue objects. Development rejects live keys. The environment
+parser fails closed if commercial launch is enabled outside production or if
+the key, expected account, webhook secret, Product, monthly Price or annual
+Price is missing. Standard `sk_` keys are not valid for canonical deployments.
+
+Provision and audit the staging catalogue in Stripe test mode before merging a
+change that activates these boundaries. Do the same independently for live
+production. Never copy live Price IDs into staging, even though Stripe uses the
+same account ID in both modes.
+
 The staging cron secret also has an operator copy in the macOS Keychain under
 service `app.pressay.cloud.cron` and account `pressay-cloud-staging`. Secret
 values must never be placed in shell history, GitHub, documentation or logs.
@@ -92,6 +105,10 @@ PRESSAY_EXPECTED_AUTH_CALLBACK_URL=https://api-staging.press-say.app/v1/desktop-
 PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS=apple \
 bun run validate:staging
 ```
+
+`release:prepare` includes `billing:audit`; therefore it must run inside the
+intended Vercel/secret context. Sensitive Vercel variables are write-only and
+must not be exported into a local `.env` file as a workaround.
 
 `build:deploy` rejects production deployments that are not attributed to a
 40-character commit on `main`. Manual production deploys are therefore blocked;

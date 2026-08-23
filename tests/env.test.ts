@@ -27,4 +27,66 @@ describe('environment', () => {
       }),
     ).toThrow('Better Auth issuer and JWKS URL must be configured together');
   });
+
+  it('pins staging to a restricted Stripe test key', () => {
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'staging',
+        STRIPE_SECRET_KEY: 'rk_live_placeholder',
+      }),
+    ).toThrow('staging must use a restricted test Stripe key');
+
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'staging',
+        STRIPE_SECRET_KEY: 'sk_test_placeholder',
+      }),
+    ).toThrow('staging must use a restricted test Stripe key');
+
+    expect(
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'staging',
+        STRIPE_SECRET_KEY: 'rk_test_placeholder',
+      }).STRIPE_SECRET_KEY,
+    ).toBe('rk_test_placeholder');
+  });
+
+  it('pins production to a restricted Stripe live key', () => {
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'production',
+        STRIPE_SECRET_KEY: 'rk_test_placeholder',
+      }),
+    ).toThrow('production must use a restricted live Stripe key');
+
+    expect(
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'production',
+        STRIPE_SECRET_KEY: 'rk_live_placeholder',
+      }).STRIPE_SECRET_KEY,
+    ).toBe('rk_live_placeholder');
+  });
+
+  it('keeps commercial Stripe launch fail-closed without complete production config', () => {
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'staging',
+        STRIPE_COMMERCIAL_LAUNCH_ENABLED: 'true',
+      }),
+    ).toThrow('commercial Stripe launch is allowed only in production');
+
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'production',
+        STRIPE_COMMERCIAL_LAUNCH_ENABLED: 'true',
+      }),
+    ).toThrow('STRIPE_SECRET_KEY is required');
+  });
 });

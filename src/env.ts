@@ -122,6 +122,62 @@ const environmentSchema = z
         message: 'Better Auth issuer and JWKS URL must be configured together',
       });
     }
+
+    const stripeKey = environment.STRIPE_SECRET_KEY;
+    if (stripeKey) {
+      const canonicalKeyPrefix =
+        environment.PRESSAY_DEPLOYMENT_ENV === 'staging'
+          ? 'rk_test_'
+          : environment.PRESSAY_DEPLOYMENT_ENV === 'production'
+            ? 'rk_live_'
+            : undefined;
+
+      if (canonicalKeyPrefix && !stripeKey.startsWith(canonicalKeyPrefix)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['STRIPE_SECRET_KEY'],
+          message: `${environment.PRESSAY_DEPLOYMENT_ENV} must use a restricted ${canonicalKeyPrefix.includes('_test_') ? 'test' : 'live'} Stripe key`,
+        });
+      }
+
+      if (
+        environment.PRESSAY_DEPLOYMENT_ENV === 'development' &&
+        stripeKey.includes('_live_')
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['STRIPE_SECRET_KEY'],
+          message: 'development must not use a live Stripe key',
+        });
+      }
+    }
+
+    if (environment.STRIPE_COMMERCIAL_LAUNCH_ENABLED) {
+      if (environment.PRESSAY_DEPLOYMENT_ENV !== 'production') {
+        context.addIssue({
+          code: 'custom',
+          path: ['STRIPE_COMMERCIAL_LAUNCH_ENABLED'],
+          message: 'commercial Stripe launch is allowed only in production',
+        });
+      }
+
+      for (const [name, value] of [
+        ['STRIPE_SECRET_KEY', environment.STRIPE_SECRET_KEY],
+        ['STRIPE_EXPECTED_ACCOUNT_ID', environment.STRIPE_EXPECTED_ACCOUNT_ID],
+        ['STRIPE_WEBHOOK_SECRET', environment.STRIPE_WEBHOOK_SECRET],
+        ['STRIPE_PRODUCT_PRO', environment.STRIPE_PRODUCT_PRO],
+        ['STRIPE_PRICE_PRO_MONTHLY', environment.STRIPE_PRICE_PRO_MONTHLY],
+        ['STRIPE_PRICE_PRO_ANNUAL', environment.STRIPE_PRICE_PRO_ANNUAL],
+      ] as const) {
+        if (!value) {
+          context.addIssue({
+            code: 'custom',
+            path: [name],
+            message: `${name} is required when commercial Stripe launch is enabled`,
+          });
+        }
+      }
+    }
   });
 
 export type Environment = z.infer<typeof environmentSchema> & {
