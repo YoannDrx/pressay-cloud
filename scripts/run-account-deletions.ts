@@ -1,4 +1,5 @@
 import { runAccountDeletionBatch } from '../src/services/account-deletion.js';
+import { writeLog } from '../src/lib/logger.js';
 
 const result = await runAccountDeletionBatch(25);
-console.log(JSON.stringify({ event: 'account_deletions.completed', ...result }));
+writeLog('info', 'account_deletions.completed', result);
