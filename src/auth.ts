@@ -93,6 +93,20 @@ function buildAuth() {
       freshAge: 60 * 10,
       deferSessionRefresh: true,
     },
+    advanced: {
+      cookies: {
+        // Apple returns authorization results with a cross-site form_post.
+        // Keep the short-lived signed OAuth state cookie available for that
+        // callback without relaxing the session cookie policy.
+        state: {
+          attributes: {
+            httpOnly: true,
+            sameSite: 'none',
+            secure: true,
+          },
+        },
+      },
+    },
     verification: { storeInDatabase: true },
     plugins: [
       magicLink({
