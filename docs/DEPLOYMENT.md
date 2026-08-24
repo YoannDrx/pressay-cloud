@@ -105,7 +105,7 @@ bun run release:prepare
 vercel inspect --logs <git-integrated-main-deployment>
 vercel curl /v1/health --deployment https://pressay-cloud-staging.vercel.app
 vercel curl /v1/ready --deployment https://pressay-cloud-staging.vercel.app
-PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS=apple bun run validate:staging
+PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS=google,apple bun run validate:staging
 ```
 
 Before moving the canonical domain, validate the temporary deployment URL while
@@ -114,7 +114,7 @@ keeping the configured callback explicit:
 ```bash
 PRESSAY_STAGING_BASE_URL=https://pressay-cloud-staging.vercel.app \
 PRESSAY_EXPECTED_AUTH_CALLBACK_URL=https://api-staging.press-say.app/v1/desktop-auth/callback \
-PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS=apple \
+PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS=google,apple \
 bun run validate:staging
 ```
 

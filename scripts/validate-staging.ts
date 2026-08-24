@@ -4,7 +4,7 @@ const baseUrl = (
 const expectedCloudAuthProviders = (
   process.env.PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS ??
   process.env.PRESSAY_EXPECTED_AUTH_PROVIDERS ??
-  'apple'
+  'google,apple'
 )
   .split(',')
   .map((provider) => provider.trim())
