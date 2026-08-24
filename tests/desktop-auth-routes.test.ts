@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const generateOneTimeToken = vi.hoisted(() => vi.fn());
 const getSession = vi.hoisted(() => vi.fn());
+const signInSocial = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/auth.ts', () => ({
   getAuth: () => ({
-    api: { generateOneTimeToken, getSession },
+    api: { generateOneTimeToken, getSession, signInSocial },
     handler: vi.fn(),
   }),
 }));
@@ -33,6 +34,21 @@ describe('desktop authentication callback', () => {
       session: { id: 'session' },
     });
     generateOneTimeToken.mockResolvedValue({ token: 'single-use-secret' });
+    signInSocial.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          redirect: false,
+          url: 'https://appleid.apple.com/auth/authorize?state=provider-state',
+        }),
+        {
+          headers: {
+            'content-type': 'application/json',
+            'set-cookie':
+              '__Secure-better-auth.state=signed-state; Path=/; HttpOnly; Secure; SameSite=None',
+          },
+        },
+      ),
+    );
   });
 
   it('advertises only configured browser sign-in methods', async () => {
@@ -61,6 +77,84 @@ describe('desktop authentication callback', () => {
     const response = await app.request('/v1/desktop-auth/callback?state=short');
     expect(response.status).toBe(422);
     expect(generateOneTimeToken).not.toHaveBeenCalled();
+  });
+
+  it('starts Apple in the browser and forwards the signed state cookie', async () => {
+    const response = await app.request(`/v1/desktop-auth/social/apple?state=${state}`);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(
+      'https://appleid.apple.com/auth/authorize?state=provider-state',
+    );
+    expect(response.headers.get('set-cookie')).toContain(
+      '__Secure-better-auth.state=signed-state',
+    );
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    expect(signInSocial).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: {
+          provider: 'apple',
+          callbackURL: `https://api.press-say.app/v1/desktop-auth/callback?state=${state}`,
+          errorCallbackURL: `https://api.press-say.app/v1/desktop-auth/error?state=${state}`,
+          disableRedirect: true,
+        },
+        asResponse: true,
+      }),
+    );
+  });
+
+  it('returns provider failures to the native app instead of the API root', async () => {
+    const response = await app.request(`/v1/desktop-auth/error?state=${state}`);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe(
+      `pressay://oauth/error?state=${state}`,
+    );
+    expect(response.headers.get('cache-control')).toContain('no-store');
+  });
+
+  it('fails closed when the Apple state cookie cannot survive form_post', async () => {
+    signInSocial.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          redirect: false,
+          url: 'https://appleid.apple.com/auth/authorize?state=provider-state',
+        }),
+        {
+          headers: {
+            'content-type': 'application/json',
+            'set-cookie':
+              '__Secure-better-auth.state=signed-state; Path=/; HttpOnly; Secure; SameSite=Lax',
+          },
+        },
+      ),
+    );
+    const response = await app.request(`/v1/desktop-auth/social/apple?state=${state}`);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'invalid_auth_provider_response' },
+    });
+  });
+
+  it('rejects an authorization redirect outside Apple', async () => {
+    signInSocial.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          redirect: false,
+          url: 'https://appleid.apple.com.attacker.example/auth/authorize',
+        }),
+        {
+          headers: {
+            'content-type': 'application/json',
+            'set-cookie':
+              '__Secure-better-auth.state=signed-state; Path=/; HttpOnly; Secure; SameSite=None',
+          },
+        },
+      ),
+    );
+    const response = await app.request(`/v1/desktop-auth/social/apple?state=${state}`);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'invalid_auth_provider_response' },
+    });
   });
 
   it('returns an uncacheable deep link carrying a one-time token in the fragment', async () => {
