@@ -20,6 +20,21 @@ function parseBoundary(value: string | null): number | undefined {
   return Number.isFinite(seconds) ? seconds : undefined;
 }
 
+export function effectiveEntitlement(
+  entitlement: Entitlement,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Entitlement {
+  const onlineValidUntil = parseBoundary(entitlement.validUntil);
+  const isActivePro =
+    entitlement.tier === 'pro' &&
+    onlineValidUntil !== undefined &&
+    onlineValidUntil > nowSeconds;
+  if (isActivePro || (entitlement.tier === 'free' && entitlement.source === 'none')) {
+    return entitlement;
+  }
+  return { ...entitlement, tier: 'free', source: 'none' };
+}
+
 function resolvePrivateKey(privateKeyPem?: string): string {
   if (privateKeyPem) return privateKeyPem.replaceAll('\\n', '\n');
   const environment = getEnvironment();
@@ -37,21 +52,19 @@ export async function signEntitlementSnapshot(
 ): Promise<{ token: string; keyId: string; expiresAt: string }> {
   const resolvedKeyId = keyId ?? getEnvironment().ENTITLEMENT_SIGNING_KEY_ID;
   const key = await importPKCS8(resolvePrivateKey(privateKeyPem), 'EdDSA');
-  const onlineValidUntil = parseBoundary(input.entitlement.validUntil);
-  const offlineGraceUntil = parseBoundary(input.entitlement.offlineGraceUntil);
-  const effectivePro =
-    input.entitlement.tier === 'pro' &&
-    onlineValidUntil !== undefined &&
-    onlineValidUntil > nowSeconds;
+  const entitlement = effectiveEntitlement(input.entitlement, nowSeconds);
+  const onlineValidUntil = parseBoundary(entitlement.validUntil);
+  const offlineGraceUntil = parseBoundary(entitlement.offlineGraceUntil);
+  const effectivePro = entitlement.tier === 'pro';
   const maximumExpiry = nowSeconds + maxOfflineGraceSeconds;
   const expiry = effectivePro
-    ? Math.min(offlineGraceUntil ?? onlineValidUntil, maximumExpiry)
+    ? Math.min(offlineGraceUntil ?? onlineValidUntil ?? maximumExpiry, maximumExpiry)
     : Math.min(nowSeconds + 24 * 60 * 60, maximumExpiry);
 
   const token = await new SignJWT({
-    tier: effectivePro ? 'pro' : 'free',
-    source: effectivePro ? input.entitlement.source : 'none',
-    revision: input.entitlement.revision,
+    tier: entitlement.tier,
+    source: entitlement.source,
+    revision: entitlement.revision,
     device_id: input.deviceId,
     online_valid_until: onlineValidUntil,
     offline_grace_until: offlineGraceUntil,

@@ -4,6 +4,7 @@ import { importJWK, jwtVerify } from 'jose';
 import { describe, expect, it } from 'vitest';
 
 import {
+  effectiveEntitlement,
   getEntitlementPublicJwk,
   signEntitlementSnapshot,
 } from '../src/services/entitlements.ts';
@@ -58,17 +59,18 @@ describe('signed entitlement snapshots', () => {
   });
 
   it('downgrades an expired Pro record to a short free snapshot', async () => {
+    const expiredEntitlement = {
+      tier: 'pro' as const,
+      source: 'trial' as const,
+      validFrom: '2026-07-01T00:00:00.000Z',
+      validUntil: '2026-08-16T00:00:00.000Z',
+      offlineGraceUntil: '2026-08-19T00:00:00.000Z',
+      revision: 2,
+    };
     const snapshot = await signEntitlementSnapshot(
       {
         ...baseInput,
-        entitlement: {
-          tier: 'pro',
-          source: 'trial',
-          validFrom: '2026-07-01T00:00:00.000Z',
-          validUntil: '2026-08-16T00:00:00.000Z',
-          offlineGraceUntil: '2026-08-19T00:00:00.000Z',
-          revision: 2,
-        },
+        entitlement: expiredEntitlement,
       },
       privateKeyPem,
       'test-key',
@@ -80,6 +82,11 @@ describe('signed entitlement snapshots', () => {
     });
     expect(verified.payload).toMatchObject({ tier: 'free', source: 'none' });
     expect(verified.payload.exp).toBe(now + 24 * 60 * 60);
+    expect(effectiveEntitlement(expiredEntitlement, now)).toMatchObject({
+      tier: 'free',
+      source: 'none',
+      revision: 2,
+    });
   });
 
   it('publishes only the public JWK', () => {

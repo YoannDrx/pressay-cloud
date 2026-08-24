@@ -11,6 +11,7 @@ import { clearEnvironmentCacheForTests } from '../src/env.ts';
 import {
   bootstrapAccount,
   bootstrapWebAccount,
+  getMe,
   getUsage,
   listDevices,
 } from '../src/services/accounts.ts';
@@ -101,6 +102,26 @@ describe('account service', () => {
       [authUserId],
     );
     expect(JSON.stringify(query.mock.calls)).not.toContain('device_identifier');
+  });
+
+  it('projects an expired stored Pro entitlement as Free', async () => {
+    query.mockResolvedValueOnce([
+      {
+        account_id: accountId,
+        status: 'active',
+        created_at: '2026-08-01T00:00:00.000Z',
+        tier: 'pro',
+        source: 'trial',
+        valid_from: '2026-08-01T00:00:00.000Z',
+        valid_until: '2026-08-02T00:00:00.000Z',
+        offline_grace_until: '2026-08-05T00:00:00.000Z',
+        revision: '1',
+      },
+    ]);
+
+    await expect(getMe(authUserId, 'person@example.com')).resolves.toMatchObject({
+      entitlement: { tier: 'free', source: 'none', revision: 1 },
+    });
   });
 
   it('returns only safe device metadata', async () => {

@@ -17,6 +17,7 @@ import {
 import { getSql } from '../db/client.js';
 import { getEnvironment, requireEnvironmentValue } from '../env.js';
 import { ApiError } from '../lib/errors.js';
+import { effectiveEntitlement } from './entitlements.js';
 
 const bootstrapRowSchema = z.object({
   account_id: z.uuid(),
@@ -108,14 +109,16 @@ function mapEntitlement(row: {
   entitlement_offline_grace_until: Date | null;
   entitlement_revision: number;
 }): Entitlement {
-  return entitlementSchema.parse({
-    tier: row.entitlement_tier,
-    source: row.entitlement_source,
-    validFrom: iso(row.entitlement_valid_from),
-    validUntil: nullableIso(row.entitlement_valid_until),
-    offlineGraceUntil: nullableIso(row.entitlement_offline_grace_until),
-    revision: row.entitlement_revision,
-  });
+  return effectiveEntitlement(
+    entitlementSchema.parse({
+      tier: row.entitlement_tier,
+      source: row.entitlement_source,
+      validFrom: iso(row.entitlement_valid_from),
+      validUntil: nullableIso(row.entitlement_valid_until),
+      offlineGraceUntil: nullableIso(row.entitlement_offline_grace_until),
+      revision: row.entitlement_revision,
+    }),
+  );
 }
 
 export async function bootstrapAccount(
@@ -214,14 +217,16 @@ export async function getMe(authUserId: string, email: string) {
     email,
     status: row.status,
     createdAt: iso(row.created_at as string),
-    entitlement: {
-      tier: row.tier,
-      source: row.source,
-      validFrom: iso(row.valid_from as string),
-      validUntil: nullableIso(row.valid_until as string | null),
-      offlineGraceUntil: nullableIso(row.offline_grace_until as string | null),
-      revision: Number(row.revision),
-    },
+    entitlement: effectiveEntitlement(
+      entitlementSchema.parse({
+        tier: row.tier,
+        source: row.source,
+        validFrom: iso(row.valid_from as string),
+        validUntil: nullableIso(row.valid_until as string | null),
+        offlineGraceUntil: nullableIso(row.offline_grace_until as string | null),
+        revision: Number(row.revision),
+      }),
+    ),
   });
 }
 
