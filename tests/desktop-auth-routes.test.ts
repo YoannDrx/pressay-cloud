@@ -3,12 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const generateOneTimeToken = vi.hoisted(() => vi.fn());
 const getSession = vi.hoisted(() => vi.fn());
 const signInSocial = vi.hoisted(() => vi.fn());
+const authHandler = vi.hoisted(() => vi.fn());
+const query = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/auth.ts', () => ({
   getAuth: () => ({
     api: { generateOneTimeToken, getSession, signInSocial },
-    handler: vi.fn(),
+    handler: authHandler,
   }),
+}));
+
+vi.mock('../src/db/client.ts', () => ({
+  getSql: () => ({ query }),
 }));
 
 import app from '../src/app.ts';
@@ -21,6 +27,7 @@ describe('desktop authentication callback', () => {
     vi.clearAllMocks();
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     process.env.PRESSAY_API_URL = 'https://api.press-say.app';
+    process.env.BETTER_AUTH_SECRET = 'better-auth-secret-that-is-long-enough';
     delete process.env.RESEND_API_KEY;
     delete process.env.GOOGLE_CLIENT_ID;
     delete process.env.GOOGLE_CLIENT_SECRET;
@@ -34,6 +41,8 @@ describe('desktop authentication callback', () => {
       session: { id: 'session' },
     });
     generateOneTimeToken.mockResolvedValue({ token: 'single-use-secret' });
+    authHandler.mockResolvedValue(new Response(null, { status: 204 }));
+    query.mockResolvedValue([]);
     signInSocial.mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -175,5 +184,90 @@ describe('desktop authentication callback', () => {
     const response = await app.request(`/v1/desktop-auth/callback?state=${state}`);
     expect(response.status).toBe(401);
     expect(generateOneTimeToken).not.toHaveBeenCalled();
+  });
+
+  it('restores the signed state cookie only for the Apple form-post callback', async () => {
+    const providerState = 'AppleProviderState_0123456789abcdef';
+    query.mockResolvedValueOnce([
+      {
+        value: JSON.stringify({
+          callbackURL: `https://api.press-say.app/v1/desktop-auth/callback?state=${state}`,
+          oauthState: providerState,
+        }),
+      },
+    ]);
+    const response = await app.request('/v1/auth/callback/apple', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        cookie: 'pressay-existing=value; __Secure-better-auth.state=stale',
+      },
+      body: new URLSearchParams({ code: 'synthetic-code', state: providerState }),
+    });
+
+    expect(response.status).toBe(204);
+    const forwarded = authHandler.mock.calls[0]?.[0] as Request;
+    const cookie = forwarded.headers.get('cookie');
+    expect(cookie).toContain('pressay-existing=value');
+    expect(cookie).not.toContain('__Secure-better-auth.state=stale');
+    expect(cookie).toContain(
+      `__Secure-better-auth.state=${encodeURIComponent(`${providerState}.`)}`,
+    );
+  });
+
+  it('does not restore a state created for a web callback', async () => {
+    const providerState = 'AppleProviderState_0123456789abcdef';
+    query.mockResolvedValueOnce([
+      {
+        value: JSON.stringify({
+          callbackURL: 'https://press-say.app/account',
+          oauthState: providerState,
+        }),
+      },
+    ]);
+
+    await app.request('/v1/auth/callback/apple', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        cookie: '__Secure-better-auth.state=web-cookie',
+      },
+      body: new URLSearchParams({ code: 'synthetic-code', state: providerState }),
+    });
+
+    const forwarded = authHandler.mock.calls[0]?.[0] as Request;
+    expect(forwarded.headers.get('cookie')).toBe(
+      '__Secure-better-auth.state=web-cookie',
+    );
+  });
+
+  it('does not synthesize state for another provider callback', async () => {
+    await app.request('/v1/auth/callback/google', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        cookie: 'pressay-existing=value',
+      },
+      body: new URLSearchParams({ code: 'synthetic-code', state }),
+    });
+
+    const forwarded = authHandler.mock.calls[0]?.[0] as Request;
+    expect(forwarded.headers.get('cookie')).toBe('pressay-existing=value');
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('leaves a malformed Apple callback for Better Auth to reject', async () => {
+    await app.request('/v1/auth/callback/apple', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        cookie: 'pressay-existing=value',
+      },
+      body: new URLSearchParams({ code: 'synthetic-code', state: 'short' }),
+    });
+
+    const forwarded = authHandler.mock.calls[0]?.[0] as Request;
+    expect(forwarded.headers.get('cookie')).toBe('pressay-existing=value');
+    expect(query).not.toHaveBeenCalled();
   });
 });
