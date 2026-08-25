@@ -109,4 +109,41 @@ describe('environment', () => {
       }),
     ).toThrow('STRIPE_SECRET_KEY is required');
   });
+
+  it('requires an explicit verified tax configuration before commercial launch', () => {
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'production',
+        STRIPE_COMMERCIAL_LAUNCH_ENABLED: 'true',
+        STRIPE_SECRET_KEY: 'rk_live_placeholder',
+        STRIPE_EXPECTED_ACCOUNT_ID: 'acct_pressay',
+        STRIPE_WEBHOOK_SECRET: 'whsec_placeholder',
+        STRIPE_PRODUCT_PRO: 'prod_pressay',
+        STRIPE_PRICE_PRO_MONTHLY: 'price_monthly',
+        STRIPE_PRICE_PRO_ANNUAL: 'price_annual',
+      }),
+    ).toThrow(
+      'commercial Stripe launch requires an explicitly verified tax configuration',
+    );
+  });
+
+  it('requires automatic tax and a pinned portal after tax approval', () => {
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'production',
+        STRIPE_COMMERCIAL_LAUNCH_ENABLED: 'true',
+        STRIPE_TAX_READY: 'true',
+        STRIPE_PRODUCT_TAX_CODE: 'txcd_pressay',
+        STRIPE_PRICE_TAX_BEHAVIOR: 'exclusive',
+        STRIPE_SECRET_KEY: 'rk_live_placeholder',
+        STRIPE_EXPECTED_ACCOUNT_ID: 'acct_pressay',
+        STRIPE_WEBHOOK_SECRET: 'whsec_placeholder',
+        STRIPE_PRODUCT_PRO: 'prod_pressay',
+        STRIPE_PRICE_PRO_MONTHLY: 'price_monthly',
+        STRIPE_PRICE_PRO_ANNUAL: 'price_annual',
+      }),
+    ).toThrow('automatic tax collection to be explicitly enabled');
+  });
 });

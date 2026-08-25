@@ -8,5 +8,7 @@ console.log(
     product: audit.productId,
     prices: 2,
     currency: audit.currency,
+    taxReady: audit.taxReady,
+    portalConfiguration: audit.portalConfigurationId,
   }),
 );

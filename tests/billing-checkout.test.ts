@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const query = vi.hoisted(() => vi.fn());
 const createCustomer = vi.hoisted(() => vi.fn());
 const createCheckoutSession = vi.hoisted(() => vi.fn());
+const createPortalSession = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/db/client.ts', () => ({
   getSql: () => ({ query }),
@@ -11,26 +12,37 @@ vi.mock('../src/billing/stripe-client.ts', () => ({
   getStripe: () => ({
     customers: { create: createCustomer },
     checkout: { sessions: { create: createCheckoutSession } },
+    billingPortal: { sessions: { create: createPortalSession } },
   }),
 }));
 
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
-import { createCheckout, getBillingStatus } from '../src/services/billing.ts';
+import {
+  createBillingPortal,
+  createCheckout,
+  getBillingStatus,
+} from '../src/services/billing.ts';
 
 describe('Stripe Checkout', () => {
   beforeEach(() => {
     query.mockReset();
     createCustomer.mockReset();
     createCheckoutSession.mockReset();
+    createPortalSession.mockReset();
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
     process.env.STRIPE_COMMERCIAL_LAUNCH_ENABLED = 'true';
+    process.env.STRIPE_TAX_READY = 'true';
+    process.env.STRIPE_AUTOMATIC_TAX_ENABLED = 'true';
+    process.env.STRIPE_PRODUCT_TAX_CODE = 'txcd_pressay';
+    process.env.STRIPE_PRICE_TAX_BEHAVIOR = 'exclusive';
     process.env.STRIPE_SECRET_KEY = 'rk_live_placeholder';
     process.env.STRIPE_EXPECTED_ACCOUNT_ID = 'acct_pressay';
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_placeholder';
     process.env.STRIPE_PRODUCT_PRO = 'prod_pressay';
     process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_monthly';
     process.env.STRIPE_PRICE_PRO_ANNUAL = 'price_annual';
+    process.env.STRIPE_PORTAL_CONFIGURATION_ID = 'bpc_pressay';
     clearEnvironmentCacheForTests();
   });
 
@@ -87,6 +99,7 @@ describe('Stripe Checkout', () => {
         integration_identifier: 'pressay_direct_v1_vkmrqjtp',
         customer: 'cus_pressay',
         line_items: [{ price: 'price_server_owned', quantity: 1 }],
+        automatic_tax: { enabled: true },
       }),
       {
         idempotencyKey:
@@ -108,6 +121,22 @@ describe('Stripe Checkout', () => {
         true,
       ],
     );
+  });
+
+  it('pins Customer Portal sessions to the reviewed Pressay configuration', async () => {
+    query.mockResolvedValueOnce([{ stripe_customer_id: 'cus_pressay' }]);
+    createPortalSession.mockResolvedValueOnce({
+      url: 'https://billing.stripe.com/p/session/test',
+    });
+
+    await expect(createBillingPortal('auth-user')).resolves.toBe(
+      'https://billing.stripe.com/p/session/test',
+    );
+    expect(createPortalSession).toHaveBeenCalledWith({
+      customer: 'cus_pressay',
+      configuration: 'bpc_pressay',
+      return_url: 'https://press-say.app/account',
+    });
   });
 
   it('returns a server-authoritative subscription summary', async () => {

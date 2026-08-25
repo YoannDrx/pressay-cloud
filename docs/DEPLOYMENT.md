@@ -2,37 +2,37 @@
 
 ## Environments
 
-The new control plane currently has one validated deployment target:
+The control plane has two isolated canonical deployment targets. Both are live
+behind their public API domains, while Cloud processing and commercial Checkout
+remain independently fail-closed.
 
 - Vercel project: `pressay-cloud-staging`
-- URL: `https://pressay-cloud-staging.vercel.app`
+- Canonical URL: `https://api-staging.press-say.app`
+- Deployment URL: `https://pressay-cloud-staging.vercel.app`
 - Runtime: Node.js 22, Hono, region `fra1`
 - Database: Neon project `snowy-meadow-52007899`, branch
   `br-old-rain-asfu6s3y`, database `pressay`, schema
-  `0014_migrate_legacy_accounts.sql`
+  `0015_free_bootstrap_and_web_accounts.sql`
 - Branch parent/restore source: `br-plain-sunset-asxlyj0q`, validated before the
   staging branch was created
 - Cloud processing: disabled by default
 
-The commercial control plane is isolated but not yet serving production traffic:
+The production control plane is isolated and serves the production API domain:
 
 - Vercel project: `pressay-cloud-production`
 - Vercel project ID: `prj_wjK1Ur48HVNXiNwgoPJKilFoCHem`
+- Canonical URL: `https://api.press-say.app`
 - Git source: `YoannDrx/pressay-cloud`, production branch `main`
 - Runtime contract: Node.js 22 from `package.json`, Hono, region `fra1`
 - Neon project: `wandering-boat-94901475`, region `aws-eu-central-1`
 - Neon primary branch: `br-square-king-b224neq5`, database `pressay_cloud`
 - Pre-schema restore branch: `br-ancient-bird-b2mvkrex`
-- Schema: `0014_migrate_legacy_accounts.sql`
+- Schema: `0015_free_bootstrap_and_web_accounts.sql`
 - Cloud processing and Stripe commercial launch: disabled
 
-The Vercel project has independent production secrets and is connected to Git.
-Its first immutable `main` deployment must pass health, readiness, OAuth and
-rollback validation before the production domain is moved.
-
-The existing Vercel project `pressay-api` owns `https://api.press-say.app` and is
-outside this repository's deployment flow. Never link, deploy or move that
-domain from this checkout until the production cutover gate is approved.
+Each Vercel project has independent secrets and is connected to Git. Production
+promotion is accepted only from an immutable `main` commit. Domain reassignment
+must preserve the previous deployment identifier as a rollback target.
 
 Preview deployments must not connect to the production database. Keep previews
 disabled or attach a dedicated Neon branch before enabling non-`main` Git deploys.
@@ -68,10 +68,10 @@ minimum, a deploy requires:
 - `PRESSAY_CLOUD_PROCESSING_ENABLED=false`
 - the complete Sign in with Apple credential set used by the Cloud-native flow
 
-Google desktop login is served by the OAuth 2.1 issuer on `press-say.app` and
-its credentials belong to `pressay-web`, not this project. Do not duplicate the
-Google client secret into Cloud merely to make `/desktop-auth/config` advertise
-Google. The staging validator probes the issuer metadata separately.
+Google and Apple desktop login are terminated by Pressay Cloud. Staging and
+production use separate OAuth applications, callback URLs and client secrets.
+Never copy a provider secret across environments merely to make
+`/desktop-auth/config` advertise a provider.
 
 Stripe credentials are pinned to the declared Pressay environment. Canonical
 staging accepts only a restricted `rk_test_` key and Stripe test-mode Product
@@ -122,6 +122,13 @@ bun run validate:staging
 intended Vercel/secret context. Sensitive Vercel variables are write-only and
 must not be exported into a local `.env` file as a workaround.
 
+Commercial launch additionally requires `STRIPE_TAX_READY=true`,
+`STRIPE_AUTOMATIC_TAX_ENABLED=true`, the reviewed Product tax code and Price tax
+behavior, and a pinned Customer Portal configuration. These values remain false
+or absent until the fiscal decision and Portal legal links are documented. The
+catalogue audit also retrieves that exact Portal configuration and rejects it
+unless its privacy-policy and terms URLs match the reviewed Pressay pages.
+
 `build:deploy` rejects production deployments that are not attributed to a
 40-character commit on `main`. Manual production deploys are therefore blocked;
 use a Git-integrated immutable deployment and promote only after the migration
@@ -136,9 +143,10 @@ After verification, inspect the final deployment for 500 responses. Do not
 disable Vercel Deployment Protection to test a protected deployment; use
 `vercel curl`.
 
-## Production cutover gate
+## Production promotion gate
 
-Do not move `api.press-say.app` until all of the following are true:
+Do not promote a new production deployment or enable a commercial kill switch
+until all of the following are true:
 
 1. the stacked backend pull requests have been reviewed and merged;
 2. migrations have passed on a fresh Neon branch and have a production backup
@@ -152,11 +160,11 @@ Do not move `api.press-say.app` until all of the following are true:
    offline/local fallback tests;
 7. `api.press-say.app` has a documented DNS/domain rollback target.
 
-The cutover is a separate, explicit operation. A staging deployment must never
+Promotion is a separate, explicit operation. A staging deployment must never
 implicitly reassign the production domain.
 
-Migration `0014_migrate_legacy_accounts.sql` preserves the stable identity subject
-and effective legacy entitlement before cutover. It deliberately does not copy
-Stripe customer or subscription identifiers because those identifiers belong to
-the Stripe account that created them. Reconcile provider records separately against
-the dedicated Pressay account before enabling Checkout.
+Migration `0015_free_bootstrap_and_web_accounts.sql` is the current schema head.
+Provider customer and subscription identifiers are never copied between Stripe
+accounts because those identifiers belong to the account that created them.
+Reconcile provider records separately against the dedicated Pressay account
+before enabling Checkout.

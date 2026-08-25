@@ -114,6 +114,7 @@ export async function createCheckout(
       subscription_data: {
         metadata: { pressay_account_id: context.account_id },
       },
+      automatic_tax: { enabled: environment.STRIPE_AUTOMATIC_TAX_ENABLED },
     },
     {
       idempotencyKey: stripeCheckoutIdempotencyKey(context.account_id, idempotencyKey),
@@ -136,9 +137,13 @@ export async function createBillingPortal(authUserId: string): Promise<string> {
   if (!customerId.success) {
     throw new ApiError(404, 'stripe_customer_not_found', 'No Stripe customer exists');
   }
+  const environment = getEnvironment();
   const session = await getStripe().billingPortal.sessions.create({
     customer: customerId.data.stripe_customer_id,
-    return_url: getEnvironment().STRIPE_PORTAL_RETURN_URL,
+    ...(environment.STRIPE_PORTAL_CONFIGURATION_ID
+      ? { configuration: environment.STRIPE_PORTAL_CONFIGURATION_ID }
+      : {}),
+    return_url: environment.STRIPE_PORTAL_RETURN_URL,
   });
   return session.url;
 }

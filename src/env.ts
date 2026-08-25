@@ -94,16 +94,33 @@ const environmentSchema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
+    STRIPE_TAX_READY: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    STRIPE_AUTOMATIC_TAX_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
     PRESSAY_PRO_CURRENCY: z
       .string()
       .regex(/^[a-z]{3}$/)
       .default('eur'),
     PRESSAY_PRO_MONTHLY_AMOUNT_MINOR: z.coerce.number().int().positive().default(799),
     PRESSAY_PRO_ANNUAL_AMOUNT_MINOR: z.coerce.number().int().positive().default(6900),
+    STRIPE_PRODUCT_TAX_CODE: z.string().startsWith('txcd_').optional(),
+    STRIPE_PRICE_TAX_BEHAVIOR: z.enum(['exclusive', 'inclusive']).optional(),
     STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
     STRIPE_PRODUCT_PRO: z.string().startsWith('prod_').optional(),
     STRIPE_PRICE_PRO_MONTHLY: z.string().startsWith('price_').optional(),
     STRIPE_PRICE_PRO_ANNUAL: z.string().startsWith('price_').optional(),
+    STRIPE_PORTAL_CONFIGURATION_ID: z.string().startsWith('bpc_').optional(),
+    STRIPE_PORTAL_PRIVACY_POLICY_URL: z
+      .url()
+      .default('https://press-say.app/en/privacy'),
+    STRIPE_PORTAL_TERMS_OF_SERVICE_URL: z
+      .url()
+      .default('https://press-say.app/en/terms'),
     STRIPE_CHECKOUT_SUCCESS_URL: z
       .url()
       .default('https://press-say.app/account?checkout=success'),
@@ -182,6 +199,23 @@ const environmentSchema = z
         });
       }
 
+      if (!environment.STRIPE_TAX_READY) {
+        context.addIssue({
+          code: 'custom',
+          path: ['STRIPE_TAX_READY'],
+          message:
+            'commercial Stripe launch requires an explicitly verified tax configuration',
+        });
+      }
+      if (!environment.STRIPE_AUTOMATIC_TAX_ENABLED) {
+        context.addIssue({
+          code: 'custom',
+          path: ['STRIPE_AUTOMATIC_TAX_ENABLED'],
+          message:
+            'commercial Stripe launch requires automatic tax collection to be explicitly enabled',
+        });
+      }
+
       for (const [name, value] of [
         ['STRIPE_SECRET_KEY', environment.STRIPE_SECRET_KEY],
         ['STRIPE_EXPECTED_ACCOUNT_ID', environment.STRIPE_EXPECTED_ACCOUNT_ID],
@@ -189,6 +223,9 @@ const environmentSchema = z
         ['STRIPE_PRODUCT_PRO', environment.STRIPE_PRODUCT_PRO],
         ['STRIPE_PRICE_PRO_MONTHLY', environment.STRIPE_PRICE_PRO_MONTHLY],
         ['STRIPE_PRICE_PRO_ANNUAL', environment.STRIPE_PRICE_PRO_ANNUAL],
+        ['STRIPE_PORTAL_CONFIGURATION_ID', environment.STRIPE_PORTAL_CONFIGURATION_ID],
+        ['STRIPE_PRODUCT_TAX_CODE', environment.STRIPE_PRODUCT_TAX_CODE],
+        ['STRIPE_PRICE_TAX_BEHAVIOR', environment.STRIPE_PRICE_TAX_BEHAVIOR],
       ] as const) {
         if (!value) {
           context.addIssue({
