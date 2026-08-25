@@ -186,7 +186,7 @@ describe('desktop authentication callback', () => {
     expect(generateOneTimeToken).not.toHaveBeenCalled();
   });
 
-  it('restores the signed state cookie only for the Apple form-post callback', async () => {
+  it('restores the signed state cookie on the GET after Apple form-post', async () => {
     const providerState = 'AppleProviderState_0123456789abcdef';
     query.mockResolvedValueOnce([
       {
@@ -196,14 +196,14 @@ describe('desktop authentication callback', () => {
         }),
       },
     ]);
-    const response = await app.request('/v1/auth/callback/apple', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        cookie: 'pressay-existing=value; __Secure-better-auth.state=stale',
+    const response = await app.request(
+      `/v1/auth/callback/apple?code=synthetic-code&state=${providerState}`,
+      {
+        headers: {
+          cookie: 'pressay-existing=value; __Secure-better-auth.state=stale',
+        },
       },
-      body: new URLSearchParams({ code: 'synthetic-code', state: providerState }),
-    });
+    );
 
     expect(response.status).toBe(204);
     const forwarded = authHandler.mock.calls[0]?.[0] as Request;
@@ -211,6 +211,50 @@ describe('desktop authentication callback', () => {
     expect(cookie).toContain('pressay-existing=value');
     expect(cookie).not.toContain('__Secure-better-auth.state=stale');
     expect(cookie).toContain(
+      `__Secure-better-auth.state=${encodeURIComponent(`${providerState}.`)}`,
+    );
+  });
+
+  it("covers Better Auth's complete Apple POST-to-GET handoff", async () => {
+    const providerState = 'AppleProviderState_0123456789abcdef';
+    query.mockResolvedValueOnce([
+      {
+        value: JSON.stringify({
+          callbackURL: `https://api.press-say.app/v1/desktop-auth/callback?state=${state}`,
+          oauthState: providerState,
+        }),
+      },
+    ]);
+    authHandler
+      .mockImplementationOnce((request: Request) => {
+        expect(request.method).toBe('POST');
+        expect(request.headers.get('cookie')).toBeNull();
+        return Response.redirect(
+          `https://api.press-say.app/v1/auth/callback/apple?code=synthetic-code&state=${providerState}`,
+          302,
+        );
+      })
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const postResponse = await app.request('/v1/auth/callback/apple', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ code: 'synthetic-code', state: providerState }),
+    });
+
+    expect(postResponse.status).toBe(302);
+    expect(query).not.toHaveBeenCalled();
+    const redirect = postResponse.headers.get('location');
+    expect(redirect).toBeTruthy();
+    if (!redirect) throw new Error('Missing Apple callback redirect');
+
+    const getResponse = await app.request(redirect);
+
+    expect(getResponse.status).toBe(204);
+    expect(query).toHaveBeenCalledOnce();
+    const forwarded = authHandler.mock.calls[1]?.[0] as Request;
+    expect(forwarded.method).toBe('GET');
+    expect(forwarded.headers.get('cookie')).toContain(
       `__Secure-better-auth.state=${encodeURIComponent(`${providerState}.`)}`,
     );
   });
@@ -226,14 +270,14 @@ describe('desktop authentication callback', () => {
       },
     ]);
 
-    await app.request('/v1/auth/callback/apple', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        cookie: '__Secure-better-auth.state=web-cookie',
+    await app.request(
+      `/v1/auth/callback/apple?code=synthetic-code&state=${providerState}`,
+      {
+        headers: {
+          cookie: '__Secure-better-auth.state=web-cookie',
+        },
       },
-      body: new URLSearchParams({ code: 'synthetic-code', state: providerState }),
-    });
+    );
 
     const forwarded = authHandler.mock.calls[0]?.[0] as Request;
     expect(forwarded.headers.get('cookie')).toBe(
@@ -242,13 +286,10 @@ describe('desktop authentication callback', () => {
   });
 
   it('does not synthesize state for another provider callback', async () => {
-    await app.request('/v1/auth/callback/google', {
-      method: 'POST',
+    await app.request(`/v1/auth/callback/google?code=synthetic-code&state=${state}`, {
       headers: {
-        'content-type': 'application/x-www-form-urlencoded',
         cookie: 'pressay-existing=value',
       },
-      body: new URLSearchParams({ code: 'synthetic-code', state }),
     });
 
     const forwarded = authHandler.mock.calls[0]?.[0] as Request;
@@ -257,13 +298,10 @@ describe('desktop authentication callback', () => {
   });
 
   it('leaves a malformed Apple callback for Better Auth to reject', async () => {
-    await app.request('/v1/auth/callback/apple', {
-      method: 'POST',
+    await app.request('/v1/auth/callback/apple?code=synthetic-code&state=short', {
       headers: {
-        'content-type': 'application/x-www-form-urlencoded',
         cookie: 'pressay-existing=value',
       },
-      body: new URLSearchParams({ code: 'synthetic-code', state: 'short' }),
     });
 
     const forwarded = authHandler.mock.calls[0]?.[0] as Request;

@@ -46,7 +46,7 @@ app.route('/v1', desktopAuthRoutes);
 app.route('/v1', syncRoutes);
 app.on(['GET', 'POST'], '/v1/auth/*', async (context) => {
   const request =
-    context.req.method === 'POST' && context.req.path === '/v1/auth/callback/apple'
+    context.req.path === '/v1/auth/callback/apple'
       ? await restoreAppleCallbackStateCookie(context.req.raw)
       : context.req.raw;
   return getAuth().handler(request);

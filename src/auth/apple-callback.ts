@@ -72,22 +72,21 @@ function replaceStateCookie(existing: string | null, signedCookie: string): stri
 }
 
 /**
- * Apple returns OAuth results through a cross-site form POST. Some browsers do
- * not attach the short-lived state cookie to that navigation even when it is
- * Secure and SameSite=None. Re-sign only the provider state on this dedicated
- * callback request; Better Auth still requires the matching, unexpired,
- * single-use verification row before it exchanges the authorization code.
+ * Better Auth converts Apple's cross-site form POST into a same-origin GET
+ * before it validates OAuth state. Some browsers still omit the short-lived
+ * state cookie on that redirected GET. Re-sign only the provider state on this
+ * dedicated callback request; Better Auth still requires the matching,
+ * unexpired, single-use verification row before it exchanges the authorization
+ * code.
  */
 export async function restoreAppleCallbackStateCookie(
   request: Request,
 ): Promise<Request> {
-  if (request.method !== 'POST') return request;
+  if (request.method !== 'GET') return request;
 
-  const form = await request
-    .clone()
-    .formData()
-    .catch(() => undefined);
-  const state = appleProviderStateSchema.safeParse(form?.get('state'));
+  const state = appleProviderStateSchema.safeParse(
+    new URL(request.url).searchParams.get('state'),
+  );
   if (!state.success) return request;
   if (!(await isPersistedDesktopState(state.data))) return request;
 
