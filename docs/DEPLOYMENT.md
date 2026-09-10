@@ -86,10 +86,21 @@ change that activates these boundaries. Do the same independently for live
 production. Never copy live Price IDs into staging, even though Stripe uses the
 same account ID in both modes.
 
-App Store verification follows the same boundary: development and staging
-accept only Apple Sandbox transactions and notifications; production accepts
-only Apple Production payloads. Do not send Sandbox notifications to the
-production webhook or Production notifications to staging.
+App Store development and staging accept only Apple Sandbox payloads.
+Production verifies Production first, then Sandbox for App Review and TestFlight.
+Both paths require Apple's signature, the configured bundle and an account-bound
+transaction, followed by a status refresh against the matching Apple Server API.
+Sandbox subscriptions use a separate ID namespace and never change the production
+customer linkage. Paid subscriptions take precedence; test access receives no
+extra offline grace beyond Apple's verified expiry.
+
+Apply migration `0016_app_review_sandbox.sql` before deploying this server.
+It also fixes billing finalization: sibling data-modifying CTEs share a snapshot,
+so an outer UPDATE could not see the provider event just inserted. Apple and
+Stripe now finalize and recompute access within a dependent volatile function.
+Verify on a production clone before rollout. Configure both Apple notification
+URLs to the API used by the submitted build; a production-backed review build
+requires Sandbox notifications at the production webhook too.
 
 The staging cron secret also has an operator copy in the macOS Keychain under
 service `app.pressay.cloud.cron` and account `pressay-cloud-staging`. Secret

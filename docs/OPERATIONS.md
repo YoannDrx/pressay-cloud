@@ -100,7 +100,7 @@ Never repair a right by editing the client or trusting a success URL.
 ## App Store notification incident
 
 1. Keep the MAS purchase surface closed if server reconciliation is unhealthy.
-2. Confirm that Sandbox reaches staging and Production reaches production.
+2. Confirm both Apple environments reach the backend used by the tested build. Production-backed App Review needs Sandbox notifications at production; never send Production payloads to staging.
 3. Verify the notification JWS against Apple roots and reconcile the original
    transaction through App Store Server API.
 4. Test duplicate, delayed, refund, revocation and restore paths before

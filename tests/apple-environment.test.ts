@@ -10,7 +10,10 @@ describe('App Store environment boundary', () => {
     expect(appleVerificationTargetsFor('staging')).toEqual([Environment.SANDBOX]);
   });
 
-  it('accepts only Production transactions in production', () => {
-    expect(appleVerificationTargetsFor('production')).toEqual([Environment.PRODUCTION]);
+  it('verifies Production first and supports Apple review Sandbox in production', () => {
+    expect(appleVerificationTargetsFor('production')).toEqual([
+      Environment.PRODUCTION,
+      Environment.SANDBOX,
+    ]);
   });
 });
