@@ -29,7 +29,9 @@ App Store purchases use StoreKit 2 signed transactions. The restore endpoint
 requires the transaction `appAccountToken` to equal the authenticated Pressay
 account UUID, then refreshes status through the App Store Server API. Version 2
 notifications are verified against Apple's published roots before they update
-billing state. Stripe and Apple subscriptions are projected through one
+billing state. Production also verifies Apple Sandbox purchases used during App
+Review, with separate subscription IDs, no paid-customer linkage and no extra
+offline grace. Paid subscriptions always take precedence. Stripe and Apple subscriptions are projected through one
 entitlement recomputation function, so an expired provider cannot revoke another
 provider's still-current entitlement.
 
@@ -125,3 +127,11 @@ later without changing the verification commands.
 See [SECURITY.md](SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Operational recovery procedures are
 kept in [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+For billing database regression tests, use an isolated local PostgreSQL database:
+
+```bash
+APPLE_TEST_DATABASE_URL=postgresql://127.0.0.1:55439/postgres bun run test tests/apple-billing-postgres.test.ts
+```
+
+The suite creates and removes its own schema; it does not contact payment providers.

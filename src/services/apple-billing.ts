@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import {
   AutoRenewStatus,
+  Environment,
   Status,
   type JWSTransactionDecodedPayload,
   type JWSRenewalInfoDecodedPayload,
@@ -38,6 +39,7 @@ interface AppleProduct {
 type AppleSubscriptionStatus = 'active' | 'past_due' | 'grace' | 'expired' | 'refunded';
 
 interface AppleSubscriptionRecord {
+  environment: Environment.PRODUCTION | Environment.SANDBOX;
   accountId: string;
   eventId: string;
   payloadHash: string;
@@ -154,7 +156,7 @@ async function applyAppleSubscription(record: AppleSubscriptionRecord): Promise<
         RETURNING provider_event_id
       ), customer_upsert AS (
         INSERT INTO billing_customer (account_id, app_store_original_transaction_id)
-        SELECT $5, $6 FROM incoming
+        SELECT $5, $6 FROM incoming WHERE $13 = 'Production'
         ON CONFLICT (account_id) DO UPDATE SET
           app_store_original_transaction_id = COALESCE(
             billing_customer.app_store_original_transaction_id,
@@ -164,17 +166,21 @@ async function applyAppleSubscription(record: AppleSubscriptionRecord): Promise<
         WHERE billing_customer.app_store_original_transaction_id IS NULL
           OR billing_customer.app_store_original_transaction_id = EXCLUDED.app_store_original_transaction_id
         RETURNING account_id
+      ), eligible_account AS (
+        SELECT account_id FROM customer_upsert
+        UNION ALL
+        SELECT $5::uuid FROM incoming WHERE $13 = 'Sandbox'
       ), subscription_upsert AS (
         INSERT INTO billing_subscription (
           account_id, provider, provider_subscription_id, provider_product_id,
           status, billing_interval, current_period_starts_at,
-          current_period_ends_at, cancel_at_period_end, provider_event_occurred_at
+          current_period_ends_at, cancel_at_period_end, provider_event_occurred_at, apple_environment
         )
         SELECT
           $5, 'app_store', $6, $7, $8, $9,
           to_timestamp($10 / 1000.0), to_timestamp($11 / 1000.0),
-          $12, to_timestamp($4 / 1000.0)
-        FROM customer_upsert
+          $12, to_timestamp($4 / 1000.0), $13
+        FROM eligible_account
         ON CONFLICT (provider, provider_subscription_id) DO UPDATE SET
           provider_product_id = EXCLUDED.provider_product_id,
           status = EXCLUDED.status,
@@ -184,35 +190,31 @@ async function applyAppleSubscription(record: AppleSubscriptionRecord): Promise<
           cancel_at_period_end = EXCLUDED.cancel_at_period_end,
           provider_event_occurred_at = EXCLUDED.provider_event_occurred_at,
           updated_at = now()
-        WHERE billing_subscription.provider_event_occurred_at <= EXCLUDED.provider_event_occurred_at
+        WHERE billing_subscription.account_id = EXCLUDED.account_id
+          AND billing_subscription.apple_environment = EXCLUDED.apple_environment
+          AND billing_subscription.provider_event_occurred_at <= EXCLUDED.provider_event_occurred_at
         RETURNING account_id
-      ), entitlement_refresh AS (
-        SELECT recompute_pressay_entitlement(account_id) AS changed
-        FROM subscription_upsert
       )
-      UPDATE provider_event event
-      SET
-        state = CASE
-          WHEN EXISTS (SELECT 1 FROM entitlement_refresh) THEN 'applied'
-          ELSE 'ignored'
-        END,
-        processed_at = now()
-      WHERE event.provider = 'apple'
-        AND event.provider_event_id = $1
-        AND event.state = 'received'`,
+      SELECT finalize_pressay_billing_event(
+        'apple', $1, ARRAY(SELECT account_id FROM subscription_upsert),
+        EXISTS (SELECT 1 FROM subscription_upsert), NULL
+      ) AS state`,
       [
         record.eventId,
         record.payloadHash,
         record.eventType,
         record.eventOccurredAtMs,
         record.accountId,
-        record.originalTransactionId,
+        record.environment === Environment.SANDBOX
+          ? `sandbox/${record.originalTransactionId}`
+          : record.originalTransactionId,
         record.productId,
         record.status,
         record.interval,
         record.periodStartsAtMs,
         record.periodEndsAtMs,
         record.cancelAtPeriodEnd,
+        record.environment,
       ],
     );
   } catch (error) {
@@ -343,6 +345,7 @@ export async function restoreAppStorePurchase(
     );
   }
   await applyAppleSubscription({
+    environment: verified.environment,
     accountId: context.accountId,
     eventId,
     payloadHash,
@@ -364,7 +367,6 @@ export async function restoreAppStorePurchase(
 }
 
 async function resolveWebhookTarget(
-  originalTransactionId: string,
   appAccountToken: string,
   productId: string,
 ): Promise<{ accountId: string; product: AppleProduct } | undefined> {
@@ -385,13 +387,9 @@ async function resolveWebhookTarget(
   const accountRows = await getSql().query(
     `SELECT DISTINCT account.id AS account_id
     FROM pressay_account account
-    LEFT JOIN billing_customer customer ON customer.account_id = account.id
     WHERE account.status = 'active'
-      AND (
-        customer.app_store_original_transaction_id = $1
-        OR account.id = $2::uuid
-      )`,
-    [originalTransactionId, appAccountToken],
+      AND account.id = $1::uuid`,
+    [appAccountToken],
   );
   const accounts = z.array(z.object({ account_id: z.uuid() })).parse(accountRows);
   const account = accounts.length === 1 ? accounts[0] : undefined;
@@ -429,20 +427,24 @@ export async function processAppleWebhook(
     throw new ApiError(401, 'invalid_apple_signature', 'Invalid Apple signature');
   }
   const notification = verified.notification;
-  const eventId = z.uuid().safeParse(notification.notificationUUID);
+  const notificationId = z.uuid().safeParse(notification.notificationUUID);
   const eventType = z.string().min(1).max(160).safeParse(notification.notificationType);
   const occurredAt = z.number().int().positive().safeParse(notification.signedDate);
-  if (!eventId.success || !eventType.success || !occurredAt.success) {
+  if (!notificationId.success || !eventType.success || !occurredAt.success) {
     throw new ApiError(
       422,
       'invalid_apple_notification',
       'Apple notification is incomplete',
     );
   }
+  const eventId =
+    verified.environment === Environment.SANDBOX
+      ? `sandbox/${notificationId.data}`
+      : notificationId.data;
   const signedTransaction = notification.data?.signedTransactionInfo;
   if (!signedTransaction) {
     await recordIgnoredAppleEvent(
-      eventId.data,
+      eventId,
       payloadHash,
       eventType.data,
       occurredAt.data,
@@ -462,13 +464,12 @@ export async function processAppleWebhook(
   }
   const transaction = parseTransaction(decoded.transaction);
   const target = await resolveWebhookTarget(
-    transaction.originalTransactionId,
     transaction.appAccountToken,
     transaction.productId,
   );
   if (!target) {
     await recordIgnoredAppleEvent(
-      eventId.data,
+      eventId,
       payloadHash,
       eventType.data,
       occurredAt.data,
@@ -477,8 +478,9 @@ export async function processAppleWebhook(
   }
   const status = mapAppleStatus(notification.data?.status, transaction);
   await applyAppleSubscription({
+    environment: verified.environment,
     accountId: target.accountId,
-    eventId: eventId.data,
+    eventId: eventId,
     payloadHash,
     eventType: eventType.data,
     eventOccurredAtMs: occurredAt.data,

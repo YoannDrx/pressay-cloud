@@ -16,9 +16,17 @@ const deploymentToken = process.env.PRESSAY_STAGING_AUTOMATION_BYPASS_SECRET;
 const oauthIssuer = (
   process.env.PRESSAY_OAUTH_ISSUER ?? 'https://press-say.app'
 ).replace(/\/$/, '');
+const production = baseUrl === 'https://api.press-say.app';
+const expectedEntitlementKeyId =
+  process.env.PRESSAY_EXPECTED_ENTITLEMENT_KEY_ID ??
+  (production
+    ? 'pressay-entitlement-production-2026-01'
+    : 'pressay-entitlement-2026-01');
 const expectedEntitlementPublicKey =
   process.env.PRESSAY_EXPECTED_ENTITLEMENT_PUBLIC_KEY ??
-  'gj3woVSEMEiNemiZKdA28oEvMrLL9iQPbiMPr_B-plQ';
+  (production
+    ? 'Xm5Rqwpjhv85nc7Y_Lrf3S7M40iCozJCrFh1UCXeoF0'
+    : 'gj3woVSEMEiNemiZKdA28oEvMrLL9iQPbiMPr_B-plQ');
 
 interface Check {
   name: string;
@@ -104,7 +112,7 @@ const checks: Check[] = [
         key.crv === 'Ed25519' &&
         key.alg === 'EdDSA' &&
         key.use === 'sig' &&
-        key.kid === 'pressay-entitlement-2026-01' &&
+        key.kid === expectedEntitlementKeyId &&
         key.x === expectedEntitlementPublicKey &&
         !('d' in key)
       );

@@ -107,7 +107,7 @@ export function appleVerificationTargetsFor(
   deploymentEnvironment: ReturnType<typeof getEnvironment>['PRESSAY_DEPLOYMENT_ENV'],
 ): readonly (Environment.PRODUCTION | Environment.SANDBOX)[] {
   return deploymentEnvironment === 'production'
-    ? [Environment.PRODUCTION]
+    ? [Environment.PRODUCTION, Environment.SANDBOX]
     : [Environment.SANDBOX];
 }
 

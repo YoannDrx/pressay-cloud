@@ -163,6 +163,7 @@ export async function getBillingStatus(authUserId: string) {
       FROM billing_subscription
       WHERE account_id = account.id
       ORDER BY
+        (apple_environment = 'Sandbox') ASC,
         (provider = entitlement.source) DESC,
         provider_event_occurred_at DESC,
         updated_at DESC
@@ -251,19 +252,12 @@ async function recordStripeFinancialProjection(
           OR to_timestamp($14) >= subscription.current_period_starts_at
         )
       RETURNING subscription.account_id
-    ), entitlement_refresh AS (
-      SELECT recompute_pressay_entitlement(account_id) AS changed
-      FROM subscription_update
     )
-    UPDATE provider_event event
-    SET
-      state = CASE WHEN EXISTS (SELECT 1 FROM financial_insert) THEN 'applied' ELSE 'ignored' END,
-      error_code = CASE WHEN EXISTS (SELECT 1 FROM financial_insert) THEN NULL ELSE 'billing_customer_not_found' END,
-      processed_at = now()
-    WHERE event.provider = 'stripe'
-      AND event.provider_event_id = $1
-      AND event.state = 'received'
-    RETURNING state`,
+    SELECT finalize_pressay_billing_event(
+      'stripe', $1, ARRAY(SELECT account_id FROM subscription_update),
+      EXISTS (SELECT 1 FROM financial_insert),
+      CASE WHEN EXISTS (SELECT 1 FROM financial_insert) THEN NULL ELSE 'billing_customer_not_found' END
+    ) AS state`,
     [
       event.id,
       payloadHash,
@@ -528,7 +522,7 @@ async function applyStripeSubscription(
         $5, 'stripe', $7, $8, $9, $10,
         CASE WHEN $11::bigint IS NULL THEN NULL ELSE to_timestamp($11) END,
         to_timestamp($12), to_timestamp($13), $14, to_timestamp($4)
-      FROM incoming
+      FROM incoming WHERE $6::text IS NOT NULL
       ON CONFLICT (provider, provider_subscription_id) DO UPDATE SET
         provider_product_id = EXCLUDED.provider_product_id,
         status = EXCLUDED.status,
@@ -541,18 +535,11 @@ async function applyStripeSubscription(
         updated_at = now()
       WHERE billing_subscription.provider_event_occurred_at <= EXCLUDED.provider_event_occurred_at
       RETURNING account_id
-    ), entitlement_refresh AS (
-      SELECT recompute_pressay_entitlement(account_id) AS changed
-      FROM subscription_upsert
     )
-    UPDATE provider_event pe
-    SET
-      state = CASE WHEN EXISTS (SELECT 1 FROM entitlement_refresh) THEN 'applied' ELSE 'ignored' END,
-      processed_at = now()
-    WHERE pe.provider = 'stripe'
-      AND pe.provider_event_id = $1
-      AND pe.state = 'received'
-    RETURNING state`,
+    SELECT finalize_pressay_billing_event(
+      'stripe', $1, ARRAY(SELECT account_id FROM subscription_upsert),
+      EXISTS (SELECT 1 FROM subscription_upsert), NULL
+    ) AS state`,
     [
       event.id,
       payloadHash,
