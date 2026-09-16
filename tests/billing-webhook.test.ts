@@ -13,7 +13,7 @@ import { processStripeWebhook } from '../src/services/billing.ts';
 
 const signingSecret = 'whsec_test_signing_secret';
 const stripe = new Stripe('sk_test_placeholder', {
-  apiVersion: '2026-07-29.dahlia',
+  apiVersion: '2026-08-26.dahlia',
 });
 const payload = JSON.stringify({
   id: 'evt_pressay_subscription_1',
