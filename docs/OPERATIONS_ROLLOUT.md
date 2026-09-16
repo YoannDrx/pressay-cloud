@@ -100,9 +100,23 @@ est une action distincte et auditée.
 
 ## Recette Stripe à exécuter sur le compte Sandbox Pressay
 
-Connexion Stripe Codex expirée lors de cette livraison : aucune recette distante
-ni paiement réel n'est déclaré effectué. Les tests Stripe automatisés utilisent
-un double du SDK, pas un compte Sandbox connecté.
+Connexion Stripe rétablie le 16 septembre 2026. Catalogue test/live confirmé à
+799 centimes mensuels et 6900 centimes annuels ; endpoints webhook actifs et
+événements paiement/remboursement/litige présents. La recette ci-dessous doit être
+tracée séparément des tests automatisés utilisant un double du SDK.
+
+Un candidat de PR peut être déployé sur le projet staging canonique avec sa branche
+et son SHA Git réels. Le projet production reste strictement limité à `main`.
+Cela permet de tester les secrets restreints dans le runtime protégé sans les exporter.
+
+Migration distante : 0017 validée sur une branche Neon issue de production ;
+0016 et 0017 appliquées transactionnellement au staging après création d'une branche
+de sauvegarde. Le staging conserve le checksum historique de 0014
+`f0ad21d3db3379b18a89ee42be339cdedc5d535006a6783f0e3976d8397ef002`,
+identique au fichier du commit `7ec321b`. La version ultérieure a ajouté les gardes
+pour une base neuve. Aucun checksum existant n'a été réécrit : le runner normal
+signale encore cette dérive historique sur cette base. Les migrations en attente
+ont été exécutées avec verrou consultatif et insertion de leurs SHA actuels.
 
 - Coupon en pourcentage puis montant EUR : portée produit, facture unique, expiration,
   plafond, codes révoqués et contrôle depuis Checkout.
