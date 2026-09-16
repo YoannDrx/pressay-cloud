@@ -1,3 +1,4 @@
+import { runReferralRewards } from '../services/referrals.js';
 import { timingSafeEqual } from 'node:crypto';
 
 import { Hono } from 'hono';
@@ -22,6 +23,11 @@ internalRoutes.get('/internal/jobs/account-deletions', async (context) => {
     rate_limit_buckets_deleted: rateLimitBucketsDeleted,
   });
   return context.json({ ...deletions, rateLimitBucketsDeleted });
+});
+
+internalRoutes.get('/internal/jobs/referral-rewards', async (context) => {
+  requireInternalSecret(context.req.header('authorization'));
+  return context.json(await runReferralRewards(10));
 });
 
 function requireInternalSecret(authorization: string | undefined): void {

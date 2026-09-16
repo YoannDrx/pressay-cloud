@@ -193,7 +193,7 @@ export async function bootstrapWebAccount(authUserId: string): Promise<{
   }
 }
 
-export async function getMe(authUserId: string, email: string) {
+export async function getAccountSnapshot(authUserId: string) {
   const rows = await getSql().query(
     `SELECT
       a.id AS account_id,
@@ -212,9 +212,8 @@ export async function getMe(authUserId: string, email: string) {
   );
   const row = rows[0] as Record<string, unknown> | undefined;
   if (!row) throw new ApiError(404, 'account_not_found', 'Account not found');
-  return meResponseSchema.parse({
+  return meResponseSchema.omit({ email: true }).parse({
     accountId: row.account_id,
-    email,
     status: row.status,
     createdAt: iso(row.created_at as string),
     entitlement: effectiveEntitlement(
@@ -340,4 +339,20 @@ export async function requestAccountDeletion(authUserId: string): Promise<void> 
     }
     throw error;
   }
+}
+
+export async function recordAccountContact(
+  authUserId: string,
+  email: string,
+): Promise<void> {
+  await getSql().query(
+    `INSERT INTO account_contact(account_id,email)
+ SELECT id,lower($2) FROM pressay_account WHERE auth_user_id=$1 AND status='active'
+ ON CONFLICT(account_id) DO UPDATE SET email=EXCLUDED.email,verified_at=now()`,
+    [authUserId, email],
+  );
+}
+
+export async function getMe(authUserId: string, email: string) {
+  return meResponseSchema.parse({ ...(await getAccountSnapshot(authUserId)), email });
 }

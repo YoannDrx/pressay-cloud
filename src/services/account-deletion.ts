@@ -98,16 +98,10 @@ async function executeDeletionJob(job: DeletionJob): Promise<boolean> {
 
   try {
     const rows = await getSql().query(
-      `DELETE FROM "user" auth_user
-      USING pressay_account account, account_deletion_job job
-      WHERE auth_user.id = $1
-        AND account.auth_user_id = auth_user.id
-        AND job.account_id = account.id
-        AND job.state = 'processing'
-      RETURNING auth_user.id`,
-      [job.authUserId],
+      'SELECT complete_pressay_account_deletion($1) AS completed',
+      [job.accountId],
     );
-    if (rows.length === 0) {
+    if (rows[0]?.completed !== true) {
       await failDeletionJob(job, 'local_account_deletion_failed');
       return false;
     }

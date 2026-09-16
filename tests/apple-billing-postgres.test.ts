@@ -41,6 +41,7 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
         '0009_unified_entitlements.sql',
         '0013_billing_financial_events.sql',
         '0016_app_review_sandbox.sql',
+        '0017_operations.sql',
       ]) {
         await client.query(
           await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'),

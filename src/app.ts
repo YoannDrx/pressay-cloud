@@ -1,3 +1,4 @@
+import { operationsRoutes } from './routes/operations.js';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
@@ -40,6 +41,7 @@ app.use(
 app.route('/v1', healthRoutes);
 app.route('/v1', internalRoutes);
 app.route('/v1', accountRoutes);
+app.route('/v1', operationsRoutes);
 app.route('/v1', billingRoutes);
 app.route('/v1', cloudRoutes);
 app.route('/v1', desktopAuthRoutes);
