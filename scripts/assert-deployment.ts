@@ -8,10 +8,13 @@ if (production) {
   const ref = process.env.VERCEL_GIT_COMMIT_REF;
   const sha = process.env.VERCEL_GIT_COMMIT_SHA;
   const deploymentEnvironment = process.env.PRESSAY_DEPLOYMENT_ENV;
-  if (ref !== 'main') {
+  if (deploymentEnvironment === 'production' && ref !== 'main') {
     throw new Error(
       'Production deployments must be created by the Vercel Git integration from main',
     );
+  }
+  if (!ref) {
+    throw new Error('Canonical deployment is missing its Git branch');
   }
   if (!sha || !/^[a-f0-9]{40}$/.test(sha)) {
     throw new Error('Production deployment is missing an immutable Git commit SHA');
@@ -32,6 +35,6 @@ if (production) {
 
 console.log(
   production
-    ? 'Verified immutable main-branch production deployment.'
+    ? 'Verified immutable canonical deployment (production requires main).'
     : 'Verified non-production deployment boundary.',
 );

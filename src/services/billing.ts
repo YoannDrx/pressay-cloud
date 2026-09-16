@@ -1,3 +1,4 @@
+import { captureReferralEvent } from './referrals.js';
 import { createHash } from 'node:crypto';
 
 import type Stripe from 'stripe';
@@ -584,6 +585,7 @@ export async function processStripeWebhook(
       event.data.object,
       payloadHash,
     );
+    await captureReferralEvent(event);
     return { duplicateOrIgnored: !applied };
   }
   if (event.data.object.object === 'invoice' && event.type.startsWith('invoice.')) {
@@ -599,11 +601,13 @@ export async function processStripeWebhook(
         event.data.object,
         payloadHash,
       );
+      await captureReferralEvent(event);
       return { duplicateOrIgnored: !applied };
     }
   }
   const financialEventApplied = await processStripeFinancialEvent(event, payloadHash);
   if (financialEventApplied !== null) {
+    await captureReferralEvent(event);
     return { duplicateOrIgnored: !financialEventApplied };
   }
   await getSql().query(

@@ -24,7 +24,7 @@ function rateLimitHash(scope: string, identifier: string): string {
     .digest('hex');
 }
 
-async function consume(
+export async function consume(
   scope: string,
   identifier: string,
   limit: number,

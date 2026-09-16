@@ -1,8 +1,9 @@
+import { operationsRoutes } from './routes/operations.js';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 
-import { ApiError } from './lib/errors.js';
+import { publicApiError } from './lib/errors.js';
 import { writeLog } from './lib/logger.js';
 import { requestId } from './lib/request-id.js';
 import { healthRoutes } from './routes/health.js';
@@ -40,6 +41,7 @@ app.use(
 app.route('/v1', healthRoutes);
 app.route('/v1', internalRoutes);
 app.route('/v1', accountRoutes);
+app.route('/v1', operationsRoutes);
 app.route('/v1', billingRoutes);
 app.route('/v1', cloudRoutes);
 app.route('/v1', desktopAuthRoutes);
@@ -64,7 +66,7 @@ app.notFound((context) =>
 
 app.onError((error, context) => {
   const requestId = context.get('requestId');
-  const apiError = error instanceof ApiError ? error : undefined;
+  const apiError = publicApiError(error);
   const status = apiError?.status ?? 500;
   const code = apiError?.code ?? 'internal_error';
 

@@ -16,6 +16,7 @@ vi.mock('../src/auth.ts', () => ({
 
 vi.mock('../src/services/accounts.ts', () => ({
   bootstrapAccount,
+  recordAccountContact: vi.fn(),
   bootstrapWebAccount,
   getMe: vi.fn(),
   getUsage: vi.fn(),

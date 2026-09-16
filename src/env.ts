@@ -23,6 +23,11 @@ const environmentSchema = z
     PRESSAY_INTERNAL_JWT_SECRET: z.string().min(32).optional(),
     DEVICE_IDENTIFIER_HMAC_SECRET: z.string().min(32).optional(),
     RATE_LIMIT_HMAC_SECRET: z.string().min(32).optional(),
+    PRESSAY_REFERRALS_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    PRESSAY_CAMPAIGN_SECRET: z.string().min(32).optional(),
     CRON_SECRET: z.string().min(32).optional(),
     PRESSAY_CLOUD_PROCESSING_ENABLED: z
       .enum(['true', 'false'])

@@ -28,7 +28,7 @@ describe('account deletion worker', () => {
   it('deletes the Stripe customer before cascading the local identity', async () => {
     query
       .mockResolvedValueOnce([job])
-      .mockResolvedValueOnce([{ id: job.auth_user_id }])
+      .mockResolvedValueOnce([{ completed: true }])
       .mockResolvedValueOnce([]);
     deleteStripeCustomer.mockResolvedValue({
       id: job.stripe_customer_id,
@@ -41,7 +41,7 @@ describe('account deletion worker', () => {
       failed: 0,
     });
     expect(deleteStripeCustomer).toHaveBeenCalledWith(job.stripe_customer_id);
-    expect(query.mock.calls[1]?.[0]).toContain('DELETE FROM "user"');
+    expect(query.mock.calls[1]?.[0]).toContain('complete_pressay_account_deletion');
   });
 
   it('keeps a retryable tombstone when provider cleanup fails', async () => {

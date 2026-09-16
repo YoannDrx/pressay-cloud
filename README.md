@@ -135,3 +135,11 @@ APPLE_TEST_DATABASE_URL=postgresql://127.0.0.1:55439/postgres bun run test tests
 ```
 
 The suite creates and removes its own schema; it does not contact payment providers.
+
+## Account operations
+
+The [operations rollout](docs/OPERATIONS_ROLLOUT.md) covers owner authorization,
+invitation grants, Stripe promotions, referrals, daily reward processing, launch
+proofs, account erasure, isolated tests and rollback. Free invitations do not
+require commercial checkout to be enabled. Never enable referrals before their
+Stripe Sandbox acceptance tests pass.

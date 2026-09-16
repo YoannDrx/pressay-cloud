@@ -15,6 +15,7 @@ import { ApiError } from '../lib/errors.js';
 import {
   assertActiveDevice,
   bootstrapAccount,
+  recordAccountContact,
   bootstrapWebAccount,
   getMe,
   getUsage,
@@ -49,6 +50,8 @@ accountRoutes.post(
       context.get('authUserId'),
       context.req.valid('json'),
     );
+    if (context.get('authEmailVerified'))
+      await recordAccountContact(context.get('authUserId'), context.get('authEmail'));
     return context.json(
       bootstrapAccountResponseSchema.parse({
         accountId: result.accountId,
@@ -62,11 +65,10 @@ accountRoutes.post(
 );
 
 accountRoutes.post('/accounts/web-bootstrap', async (context) => {
-  return context.json(
-    bootstrapWebAccountResponseSchema.parse(
-      await bootstrapWebAccount(context.get('authUserId')),
-    ),
-  );
+  const result = await bootstrapWebAccount(context.get('authUserId'));
+  if (context.get('authEmailVerified'))
+    await recordAccountContact(context.get('authUserId'), context.get('authEmail'));
+  return context.json(bootstrapWebAccountResponseSchema.parse(result));
 });
 
 accountRoutes.get('/me', async (context) => {
@@ -75,7 +77,9 @@ accountRoutes.get('/me', async (context) => {
 
 accountRoutes.delete('/me', async (context) => {
   await requestAccountDeletion(context.get('authUserId'));
-  await getAuth().api.revokeSessions({ headers: context.req.raw.headers });
+  if (await getAuth().api.getSession({ headers: context.req.raw.headers })) {
+    await getAuth().api.revokeSessions({ headers: context.req.raw.headers });
+  }
   return context.body(null, 202);
 });
 

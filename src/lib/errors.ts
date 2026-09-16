@@ -8,3 +8,20 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+
+/** Never forward provider messages: they may contain credentials or customer data. */
+export function publicApiError(error: unknown): ApiError | undefined {
+  if (error instanceof ApiError) return error;
+  if (
+    error instanceof Error &&
+    'type' in error &&
+    error.type === 'StripePermissionError'
+  ) {
+    return new ApiError(
+      503,
+      'stripe_permissions_required',
+      'Stripe server permissions require administrator attention',
+    );
+  }
+  return undefined;
+}

@@ -60,7 +60,19 @@ async function verifyExternalBearer(authorization: string | undefined) {
   ) {
     return null;
   }
-  return { id: payload.sub, email: payload.email };
+  return {
+    id: payload.sub,
+    email: payload.email,
+    verified: true,
+    webProxy: payload.token_use === 'pressay_web_proxy',
+    sessionId: typeof payload.sid === 'string' ? payload.sid : '',
+    stepUpAt:
+      payload.token_use === 'pressay_web_proxy' &&
+      ['totp', 'backup_code'].includes(String(payload.pressay_step_up_method)) &&
+      typeof payload.pressay_step_up_at === 'number'
+        ? payload.pressay_step_up_at
+        : 0,
+  };
 }
 
 export const requireAuthentication = createMiddleware<AppEnvironment>(
@@ -68,8 +80,22 @@ export const requireAuthentication = createMiddleware<AppEnvironment>(
     const authSession = await getAuth().api.getSession({
       headers: context.req.raw.headers,
     });
-    let identity: { id: string; email: string } | null = authSession
-      ? { id: authSession.user.id, email: authSession.user.email }
+    let identity: {
+      id: string;
+      email: string;
+      verified: boolean;
+      sessionId: string;
+      stepUpAt: number;
+      webProxy: boolean;
+    } | null = authSession
+      ? {
+          id: authSession.user.id,
+          email: authSession.user.email,
+          verified: authSession.user.emailVerified,
+          sessionId: authSession.session.id,
+          stepUpAt: 0,
+          webProxy: false,
+        }
       : null;
     if (!identity) {
       try {
@@ -84,6 +110,10 @@ export const requireAuthentication = createMiddleware<AppEnvironment>(
 
     context.set('authUserId', identity.id);
     context.set('authEmail', identity.email);
+    context.set('authEmailVerified', identity.verified);
+    context.set('authStepUpAt', identity.stepUpAt);
+    context.set('authSessionId', identity.sessionId);
+    context.set('authWebProxy', identity.webProxy);
     await next();
   },
 );
