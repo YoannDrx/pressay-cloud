@@ -338,7 +338,7 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
             await pool.query<{ n: number }>(
               "SELECT count(*)::int AS n FROM referral_reward WHERE status='review'",
             )
-          ).rows[0].n,
+          ).rows[0]?.n,
         ).toBe(2);
       }
       // Also recover the historical state left by the old repeated-delivery bug.
@@ -349,7 +349,7 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
           await pool.query<{ n: number }>(
             "SELECT count(*)::int AS n FROM referral_reward WHERE status='review'",
           )
-        ).rows[0].n,
+        ).rows[0]?.n,
       ).toBe(2);
     });
     it('suppresses reward if a refund arrived before the invoice webhook', async () => {
