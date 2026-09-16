@@ -54,8 +54,8 @@ nécessaires avant activation en production.
 ## Déploiement dans l'ordre
 
 1. Revoir les diffs Cloud et web et les tests. Créer une branche de base isolée
-   représentative de la production ; appliquer la migration 0017 via `bun run db:migrate`.
-   `bun run db:check` doit annoncer 0017. Ne jamais modifier une migration déjà appliquée.
+   représentative de la production ; appliquer les migrations 0017 et 0018 via `bun run db:migrate`.
+   `bun run db:check` doit annoncer 0018. Ne jamais modifier une migration déjà appliquée.
 2. Vérifier la reprise des accès support/trial existants, les droits Stripe/Apple
    et les inscriptions sans ligne locale dans la table `user`.
 3. Fournir `PRESSAY_CAMPAIGN_SECRET` (secret indépendant, au moins 32 caractères),
@@ -156,3 +156,30 @@ signée conserve son format et les anciennes routes restent disponibles. Les dro
 accordés et les clés Stripe d'idempotence doivent être conservés pour réconciliation.
 Un rollback du code de suppression de compte doit suspendre son worker, car l'ancien
 worker ne sait pas terminer l'effacement d'une identité hébergée séparément.
+
+## Recette distante achevée avant fusion
+
+Le 16 septembre : permissions des clés restreintes test/live approuvées par le
+propriétaire et enregistrées après sa vérification Stripe. Aucun secret existant
+n'a été copié dans le code ni dans un nouvel environnement.
+
+- Paiement mensuel de test EUR 7,99 : droits Pro par webhook signé, cadeau Pro
+  parrain et crédit Stripe EUR 7,99 appliqués par le worker déployé.
+- Réenvoi du même événement : deux récompenses au total et un seul crédit.
+- Paiement annuel avec remise de 25 % : EUR 51,75 encaissés en mode test, crédit
+  EUR 5,67 appliqué, calculé sur le prix annuel catalogue de EUR 69.
+- Remise 100 % : facture payée à zéro, aucun paiement admissible ni récompense.
+- Remboursement : cadeau révoqué, accès payé retiré, crédit déjà appliqué envoyé
+  en revue manuelle. La migration 0018 corrige le cas découvert en recette où les
+  notifications répétées effaçaient cet état de revue ; elle répare également les
+  crédits concernés. Test de régression PostgreSQL ajouté.
+- Coupons de test en pourcentage et montant fixe EUR créés avec portée produit,
+  facture unique, expiration et plafond ; consommation des remises 25 % et 100 %
+  vérifiée. Cela ne remplace pas une recette Checkout complète ni la validation
+  des opérations sensibles dans la session administrateur finale.
+
+Migrations 0017/0018 vérifiées sur clone Neon puis staging et production avec
+contrôle des SHA et verrou transactionnel. Sauvegardes de branches conservées.
+157 tests passent, dont 18 PostgreSQL réel. Les ventes demeurent fermées : la recette
+commerciale complète (renouvellement, impayé, litiges, binaire et suppression depuis
+le Mac), la médiation et la fiscalité restent des conditions d'ouverture distinctes.

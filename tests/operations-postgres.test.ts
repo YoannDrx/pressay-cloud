@@ -319,6 +319,39 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
         ).rowCount,
       ).toBe(2);
     });
+    it('keeps applied and uncertain credits in review across repeated reversals', async () => {
+      await attribute();
+      await pool.query(
+        "SELECT record_pressay_referral_payment('in_credit',$1,now(),799,'eur')",
+        [b],
+      );
+      await pool.query(
+        "UPDATE referral_reward SET kind='credit',status='applied',stripe_transaction_id='cbtxn_test',applied_at=now() WHERE side='referee'",
+      );
+      await pool.query(
+        "UPDATE referral_reward SET kind='credit',status='failed',first_attempt_at=now(),attempts=1 WHERE side='referrer'",
+      );
+      for (let delivery = 0; delivery < 3; delivery++) {
+        await pool.query("SELECT reverse_pressay_referral('in_credit')");
+        expect(
+          (
+            await pool.query<{ n: number }>(
+              "SELECT count(*)::int AS n FROM referral_reward WHERE status='review'",
+            )
+          ).rows[0].n,
+        ).toBe(2);
+      }
+      // Also recover the historical state left by the old repeated-delivery bug.
+      await pool.query("UPDATE referral_reward SET status='cancelled'");
+      await pool.query("SELECT reverse_pressay_referral('in_credit')");
+      expect(
+        (
+          await pool.query<{ n: number }>(
+            "SELECT count(*)::int AS n FROM referral_reward WHERE status='review'",
+          )
+        ).rows[0].n,
+      ).toBe(2);
+    });
     it('suppresses reward if a refund arrived before the invoice webhook', async () => {
       await attribute();
       await pool.query<Record<string, unknown>>(
