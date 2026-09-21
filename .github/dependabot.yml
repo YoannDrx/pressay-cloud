@@ -1,11 +1,18 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # Upgrade TypeScript with typescript-eslint compatibility verified together.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # Match the deployed Node.js 22 runtime.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
     groups:
       runtime:
         dependency-type: production
