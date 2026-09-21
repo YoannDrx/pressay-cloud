@@ -10,6 +10,9 @@ updates:
       # Upgrade TypeScript with typescript-eslint compatibility verified together.
       - dependency-name: typescript
         update-types: [version-update:semver-major]
+      # Match the deployed Node.js 22 runtime.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
     groups:
       runtime:
         dependency-type: production
