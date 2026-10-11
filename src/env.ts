@@ -116,6 +116,23 @@ const environmentSchema = z
       .default('eur'),
     PRESSAY_PRO_MONTHLY_AMOUNT_MINOR: z.coerce.number().int().positive().default(799),
     PRESSAY_PRO_ANNUAL_AMOUNT_MINOR: z.coerce.number().int().positive().default(6900),
+    // Stripe Tax in Checkout. Keep false until Stripe Tax is activated, the
+    // tax registrations exist and the prices are tax-inclusive.
+    STRIPE_AUTOMATIC_TAX_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    STRIPE_TAX_ID_COLLECTION_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    // Stripe product tax code applied by billing:provision when tax is enabled.
+    STRIPE_PRODUCT_TAX_CODE: z
+      .string()
+      .regex(/^txcd_\d{8}$/)
+      .default('txcd_10103000'),
+    // Pro stays available this many days after a renewal payment fails.
+    STRIPE_PAST_DUE_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(7),
     STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
     STRIPE_PRODUCT_PRO: z.string().startsWith('prod_').optional(),
     STRIPE_PRICE_PRO_MONTHLY: z.string().startsWith('price_').optional(),

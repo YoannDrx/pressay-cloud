@@ -5,6 +5,10 @@ import { getEnvironment, requireEnvironmentValue } from '../src/env.js';
 
 const environment = getEnvironment();
 const stripe = getStripe();
+// B2C prices in the EU are displayed tax-inclusive (TTC). New prices are
+// always created inclusive; existing unspecified prices are switched once
+// when Stripe Tax is enabled (Stripe allows setting tax_behavior once).
+const taxEnabled = environment.STRIPE_AUTOMATIC_TAX_ENABLED;
 const expectedAccountId = requireEnvironmentValue(
   environment.STRIPE_EXPECTED_ACCOUNT_ID,
   'STRIPE_EXPECTED_ACCOUNT_ID',
@@ -36,11 +40,22 @@ const product =
         pressay_catalogue: 'pro-v1',
         privacy_posture: 'local-first',
       },
+      ...(taxEnabled ? { tax_code: environment.STRIPE_PRODUCT_TAX_CODE } : {}),
     },
     { idempotencyKey: 'pressay-pro-v1-product' },
   ));
 if (!product.active || product.name !== 'Pressay Pro') {
   throw new Error('Existing Pressay Pro product is inactive or has an unexpected name');
+}
+
+if (taxEnabled) {
+  const currentTaxCode =
+    typeof product.tax_code === 'string' ? product.tax_code : product.tax_code?.id;
+  if (currentTaxCode !== environment.STRIPE_PRODUCT_TAX_CODE) {
+    await stripe.products.update(product.id, {
+      tax_code: environment.STRIPE_PRODUCT_TAX_CODE,
+    });
+  }
 }
 
 const existingPrices = await stripe.prices.list({
@@ -64,12 +79,24 @@ async function ensurePrice(
   if (matches.length > 1) {
     throw new Error(`Multiple matching ${interval} prices exist; reconcile manually`);
   }
-  if (matches[0]) return matches[0];
+  const existing = matches[0];
+  if (existing) {
+    if (taxEnabled && existing.tax_behavior === 'unspecified') {
+      return stripe.prices.update(existing.id, { tax_behavior: 'inclusive' });
+    }
+    if (taxEnabled && existing.tax_behavior !== 'inclusive') {
+      throw new Error(
+        `The ${interval} price is tax-exclusive; create an inclusive price and update the catalogue`,
+      );
+    }
+    return existing;
+  }
   return stripe.prices.create(
     {
       product: product.id,
       currency: environment.PRESSAY_PRO_CURRENCY,
       unit_amount: amount,
+      tax_behavior: 'inclusive',
       recurring: { interval },
       lookup_key: lookupKey,
       nickname: interval === 'month' ? 'Pressay Pro Monthly' : 'Pressay Pro Annual',

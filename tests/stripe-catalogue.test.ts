@@ -47,6 +47,7 @@ describe('Stripe catalogue audit', () => {
     process.env.PRESSAY_DEPLOYMENT_ENV = 'development';
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.STRIPE_COMMERCIAL_LAUNCH_ENABLED;
+    delete process.env.STRIPE_AUTOMATIC_TAX_ENABLED;
     process.env.STRIPE_EXPECTED_ACCOUNT_ID = account.id;
     process.env.STRIPE_PRODUCT_PRO = product.id;
     process.env.STRIPE_PRICE_PRO_MONTHLY = monthly.id;
@@ -96,5 +97,26 @@ describe('Stripe catalogue audit', () => {
     await expect(auditStripeCatalogue(client())).rejects.toThrow(
       'active Pressay Pro catalogue entry',
     );
+  });
+
+  it('requires tax-inclusive prices once Stripe Tax is enabled', async () => {
+    process.env.STRIPE_AUTOMATIC_TAX_ENABLED = 'true';
+    clearEnvironmentCacheForTests();
+    await expect(auditStripeCatalogue(client())).rejects.toThrow('tax-inclusive');
+
+    const inclusiveClient = {
+      accounts: { retrieveCurrent: () => Promise.resolve(account) },
+      products: { retrieve: () => Promise.resolve(product) },
+      prices: {
+        retrieve: (id: string) =>
+          Promise.resolve({
+            ...(id === monthly.id ? monthly : annual),
+            tax_behavior: 'inclusive',
+          }),
+      },
+    } as unknown as Parameters<typeof auditStripeCatalogue>[0];
+    await expect(auditStripeCatalogue(inclusiveClient)).resolves.toMatchObject({
+      productId: product.id,
+    });
   });
 });

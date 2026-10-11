@@ -76,6 +76,14 @@ export async function auditStripeCatalogue(
     ) {
       throw new Error(`Stripe ${label} Price does not match the Pressay catalogue`);
     }
+    if (
+      environment.STRIPE_AUTOMATIC_TAX_ENABLED &&
+      price.tax_behavior !== 'inclusive'
+    ) {
+      throw new Error(
+        `Stripe ${label} Price must be tax-inclusive before Stripe Tax is enabled`,
+      );
+    }
   }
 
   return {

@@ -4,14 +4,26 @@ import pg from 'pg';
 import Stripe from 'stripe';
 import { processStripeWebhook } from '../src/services/billing.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
-import { clearStripeForTests } from '../src/billing/stripe-client.ts';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Environment, Status } from '@apple/app-store-server-library';
 
 const query = vi.hoisted(() => vi.fn());
 const verifyAppleTransaction = vi.hoisted(() => vi.fn());
 const getVerifiedAppleSubscriptionStatuses = vi.hoisted(() => vi.fn());
+const retrieveSubscription = vi.hoisted(() => vi.fn());
+const cancelSubscription = vi.hoisted(() => vi.fn());
 vi.mock('../src/db/client.ts', () => ({ getSql: () => ({ query }) }));
+vi.mock('../src/billing/stripe-client.ts', async () => {
+  const { default: StripeClient } = await import('stripe');
+  const real = new StripeClient('sk_test_placeholder');
+  return {
+    getStripe: () => ({
+      webhooks: real.webhooks,
+      subscriptions: { retrieve: retrieveSubscription, cancel: cancelSubscription },
+    }),
+    clearStripeForTests: () => undefined,
+  };
+});
 vi.mock('../src/billing/apple-client.ts', () => ({
   verifyAppleTransaction,
   getVerifiedAppleSubscriptionStatuses,
@@ -42,6 +54,7 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
         '0013_billing_financial_events.sql',
         '0016_app_review_sandbox.sql',
         '0017_operations.sql',
+        '0019_billing_hardening.sql',
       ]) {
         await client.query(
           await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'),
@@ -58,7 +71,13 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
       process.env.STRIPE_SECRET_KEY = 'sk_test_placeholder';
       process.env.STRIPE_WEBHOOK_SECRET = 'whsec_local_postgres_test';
       clearEnvironmentCacheForTests();
-      clearStripeForTests();
+      retrieveSubscription.mockReset();
+      cancelSubscription.mockReset();
+      // Stripe no longer knows these local fixtures: project the event snapshot.
+      retrieveSubscription.mockRejectedValue(
+        Object.assign(new Error('missing'), { code: 'resource_missing' }),
+      );
+      cancelSubscription.mockResolvedValue({ status: 'canceled' });
       await client.query('TRUNCATE "user", billing_product, provider_event CASCADE');
       await client.query(
         'INSERT INTO "user" (id, name, email, "emailVerified") VALUES ($1, $1, $2, true)',
@@ -236,6 +255,11 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
         }),
       ).toEqual({ duplicateOrIgnored: false });
       expect((await entitlement()).tier).toBe('free');
+      expect(cancelSubscription).toHaveBeenCalledWith(
+        'sub_test',
+        {},
+        { idempotencyKey: 'pressay-reversal-cancel/sub_test' },
+      );
       expect(
         (
           await client.query(
@@ -243,6 +267,146 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
           )
         ).rows,
       ).toEqual([{ state: 'applied' }, { state: 'applied' }]);
+    });
+    async function stripeFixture() {
+      await client.query(
+        "INSERT INTO billing_customer (account_id, stripe_customer_id) VALUES ($1, 'cus_test')",
+        [accountId],
+      );
+      await client.query(
+        "INSERT INTO billing_product (id, provider, provider_product_id, provider_price_id, tier, billing_interval, active) VALUES ('stripe_pro', 'stripe', 'prod_test', 'price_test', 'pro', 'month', true)",
+      );
+      const stripe = new Stripe('sk_test_placeholder');
+      return async (event: object) => {
+        const payload = JSON.stringify(event);
+        const signature = stripe.webhooks.generateTestHeaderString({
+          payload,
+          secret: 'whsec_local_postgres_test',
+        });
+        return processStripeWebhook(payload, signature);
+      };
+    }
+    function subscriptionEvent(
+      id: string,
+      type: string,
+      created: number,
+      status: string,
+      periodStart: number,
+      periodEnd: number,
+    ) {
+      return {
+        id,
+        object: 'event',
+        created,
+        type,
+        data: {
+          object: {
+            id: 'sub_test',
+            object: 'subscription',
+            customer: 'cus_test',
+            metadata: { pressay_account_id: accountId },
+            status,
+            trial_end: null,
+            cancel_at_period_end: false,
+            items: {
+              data: [
+                {
+                  quantity: 1,
+                  current_period_start: periodStart,
+                  current_period_end: periodEnd,
+                  price: {
+                    id: 'price_test',
+                    product: 'prod_test',
+                    recurring: { interval: 'month' },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      };
+    }
+    it('keeps an activation when the incomplete creation arrives later in the same second', async () => {
+      const deliver = await stripeFixture();
+      const created = Math.floor(now / 1000);
+      await deliver(
+        subscriptionEvent(
+          'evt_updated',
+          'customer.subscription.updated',
+          created,
+          'active',
+          created,
+          created + 3600,
+        ),
+      );
+      await deliver(
+        subscriptionEvent(
+          'evt_created',
+          'customer.subscription.created',
+          created,
+          'incomplete',
+          created,
+          created + 3600,
+        ),
+      );
+      expect(
+        (await client.query('SELECT status FROM billing_subscription')).rows,
+      ).toEqual([{ status: 'active' }]);
+      expect((await entitlement()).tier).toBe('pro');
+    });
+    it('ends past_due access after the grace window instead of the new period end', async () => {
+      const deliver = await stripeFixture();
+      const created = Math.floor(now / 1000);
+      // Renewal failed ten days ago on a 30-day period: grace (7 days) is over.
+      await deliver(
+        subscriptionEvent(
+          'evt_past_due_old',
+          'customer.subscription.updated',
+          created,
+          'past_due',
+          created - 10 * 86_400,
+          created + 20 * 86_400,
+        ),
+      );
+      expect((await entitlement()).tier).toBe('free');
+      // A fresh failure keeps Pro only until period start + 7 days.
+      await deliver(
+        subscriptionEvent(
+          'evt_past_due_new',
+          'customer.subscription.updated',
+          created + 1,
+          'past_due',
+          created - 2 * 86_400,
+          created + 28 * 86_400,
+        ),
+      );
+      const current = await entitlement();
+      expect(current.tier).toBe('pro');
+      expect(current.valid_until).toEqual(new Date((created + 5 * 86_400) * 1000));
+    });
+    it('reprocesses a delivery that previously failed', async () => {
+      const deliver = await stripeFixture();
+      const created = Math.floor(now / 1000);
+      const event = subscriptionEvent(
+        'evt_retry',
+        'customer.subscription.updated',
+        created,
+        'active',
+        created,
+        created + 3600,
+      );
+      await client.query(
+        "INSERT INTO provider_event (provider, provider_event_id, payload_sha256, event_type, provider_occurred_at, state, error_code, processed_at) VALUES ('stripe', 'evt_retry', decode(repeat('00', 32), 'hex'), 'customer.subscription.updated', now(), 'failed', 'database_40001', now())",
+      );
+      expect(await deliver(event)).toEqual({ duplicateOrIgnored: false });
+      expect(
+        (
+          await client.query(
+            "SELECT state, error_code FROM provider_event WHERE provider_event_id = 'evt_retry'",
+          )
+        ).rows,
+      ).toEqual([{ state: 'applied', error_code: null }]);
+      expect((await entitlement()).tier).toBe('pro');
     });
   },
 );
