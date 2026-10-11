@@ -56,24 +56,41 @@ operationsRoutes.use('/admin/*', async (c, next) => {
   if (!owner)
     throw new ApiError(403, 'admin_required', 'Administrator access required');
   c.set('operationsAccountId', owner);
-  if (c.req.method !== 'GET') {
-    const at = c.get('authStepUpAt');
-    const now = Math.floor(Date.now() / 1000);
-    if (
-      !c.get('authSessionId') ||
-      !Number.isFinite(at) ||
-      at <= now - 600 ||
-      at > now + 30
-    )
-      throw new ApiError(
-        403,
-        'step_up_required',
-        'Verify your second factor within ten minutes',
-      );
-    await consume('admin_mutation', owner, 20);
-  }
+  const mutation = c.req.method !== 'GET';
+  if (mutation || personalDataRead(c.req.path)) requireRecentStepUp(c);
+  if (mutation) await consume('admin_mutation', owner, 20);
   await next();
 });
+/** Admin reads that return emails or a person's full record. */
+function personalDataRead(path: string): boolean {
+  return /\/admin\/(users(\/[^/]+)?|referrals)\/?$/.test(path);
+}
+/** Second-factor proof bound to the web session, less than ten minutes old. */
+function requireRecentStepUp(c: Context<AppEnvironment>): void {
+  const at = c.get('authStepUpAt');
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    !c.get('authSessionId') ||
+    !Number.isFinite(at) ||
+    at <= now - 600 ||
+    at > now + 30
+  )
+    throw new ApiError(
+      403,
+      'step_up_required',
+      'Verify your second factor within ten minutes',
+    );
+}
+/** Personal-data reads are recorded like mutations (no search terms stored). */
+async function auditRead(c: Context<AppEnvironment>, action: string, target: string) {
+  await audit(
+    c.get('operationsAccountId'),
+    action,
+    target,
+    'personal_data_read',
+    c.get('requestId'),
+  );
+}
 operationsRoutes.use('/referrals/*', verifiedAccount);
 operationsRoutes.use('/access/*', verifiedAccount);
 async function verifiedAccount(c: Context<AppEnvironment>, next: Next) {
@@ -155,6 +172,7 @@ operationsRoutes.get('/admin/users', async (c) => {
   const parsed = userQuerySchema.safeParse(c.req.query());
   if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
   const q = parsed.data;
+  await auditRead(c, 'admin.users.read', 'users');
   const rows = await getSql().query(
     `SELECT a.id,u.email,u.email AS display_name,a.status,a.created_at,
     CASE WHEN e.tier='pro' AND e.valid_until>now() THEN 'pro' ELSE 'free' END AS plan,
@@ -176,6 +194,7 @@ operationsRoutes.get('/admin/users', async (c) => {
 });
 operationsRoutes.get('/admin/users/:id', async (c) => {
   const id = uuid(c.req.param('id'));
+  await auditRead(c, 'admin.user.read', id);
   const rows = await getSql().query(
     'SELECT a.auth_user_id,u.email FROM pressay_account a LEFT JOIN account_contact u ON u.account_id=a.id WHERE a.id=$1',
     [id],
@@ -278,8 +297,9 @@ operationsRoutes.post('/admin/grants/:id/revoke', async (c) => {
   );
   return c.json({ revoked: true });
 });
-operationsRoutes.get('/admin/referrals', async (c) =>
-  c.json({
+operationsRoutes.get('/admin/referrals', async (c) => {
+  await auditRead(c, 'admin.referrals.read', 'referrals');
+  return c.json({
     referrals: await getSql().query(
       `SELECT a.*,u.email AS referrer_email,v.email AS referee_email,
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'side',r.side,'status',r.status,'kind',r.kind,'amount_minor',r.amount_minor,'last_error_code',r.last_error_code)) FROM referral_reward r WHERE r.attribution_id=a.id),'[]') AS rewards
@@ -287,8 +307,8 @@ operationsRoutes.get('/admin/referrals', async (c) =>
   JOIN pressay_account q ON q.id=a.referee_id LEFT JOIN account_contact v ON v.account_id=q.id ORDER BY a.attributed_at DESC LIMIT 100`,
       [],
     ),
-  }),
-);
+  });
+});
 operationsRoutes.post('/admin/rewards/process', async (c) => {
   const input = await body(c, reasonSchema);
   await audit(

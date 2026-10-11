@@ -76,6 +76,17 @@ const environmentSchema = z
       .regex(/^[A-Za-z0-9._-]{1,80}$/)
       .default('pressay-entitlement-development'),
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1).optional(),
+    // Verified emails allowed to claim the operations owner seat (comma-separated).
+    PRESSAY_OPERATIONS_OWNER_EMAILS: z
+      .string()
+      .default('')
+      .transform((value) =>
+        value
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.email())),
     // Retention of operational records (see docs/ARCHITECTURE.md).
     PRESSAY_RETENTION_IDEMPOTENCY_DAYS: z.coerce
       .number()

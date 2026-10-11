@@ -8,7 +8,8 @@ nécessaires avant activation en production.
 ## Fonctionnement livré
 
 - Rôle propriétaire attribué une seule fois au compte stable associé au JWT vérifié
-  de `yoann.andrieux@gmail.com`. Le singleton ne peut pas être réattribué à un
+  d'une adresse listée dans `PRESSAY_OPERATIONS_OWNER_EMAILS` (variable
+  d'environnement, jamais dans le code). Le singleton ne peut pas être réattribué à un
   nouveau compte portant la même adresse après suppression de l'ancien.
 - Routes `/v1/admin/session`, `overview`, `users`, `users/:id`, `campaigns`,
   `campaigns/:id/revoke`, `grants/:id/revoke`, `referrals`, `rewards/:id/retry`,

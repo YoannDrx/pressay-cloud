@@ -103,9 +103,10 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
       process.env.PRESSAY_CAMPAIGN_SECRET = 'local-campaign-test-key-32-characters';
       process.env.RATE_LIMIT_HMAC_SECRET = 'local-rate-limit-test-key-32-characters';
       process.env.PRESSAY_REFERRALS_ENABLED = 'true';
+      process.env.PRESSAY_OPERATIONS_OWNER_EMAILS = 'Owner@Example.com';
       clearEnvironmentCacheForTests();
       const token = await new SignJWT({
-        email: 'yoann.andrieux@gmail.com',
+        email: 'owner@example.com',
         email_verified: true,
         token_use: 'pressay_web_proxy',
         sid: 'session',
