@@ -28,6 +28,7 @@ describe('Stripe Checkout', () => {
     delete process.env.STRIPE_TAX_ID_COLLECTION_ENABLED;
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
+    process.env.ENTITLEMENT_SIGNING_KEY_ID = 'pressay-entitlement-production-2026-01';
     process.env.STRIPE_COMMERCIAL_LAUNCH_ENABLED = 'true';
     process.env.STRIPE_SECRET_KEY = 'rk_live_placeholder';
     process.env.STRIPE_EXPECTED_ACCOUNT_ID = 'acct_pressay';

@@ -70,6 +70,7 @@ describe('environment', () => {
         PRESSAY_DEPLOYMENT_ENV: 'production',
         VERCEL: '1',
         VERCEL_PROJECT_ID: 'prj_wjK1Ur48HVNXiNwgoPJKilFoCHem',
+        ENTITLEMENT_SIGNING_KEY_ID: 'pressay-entitlement-production-2026-01',
       }).PRESSAY_DEPLOYMENT_ENV,
     ).toBe('production');
   });
@@ -88,6 +89,7 @@ describe('environment', () => {
         DATABASE_URL: 'postgresql://example.test/pressay',
         PRESSAY_DEPLOYMENT_ENV: 'production',
         STRIPE_SECRET_KEY: 'rk_live_placeholder',
+        ENTITLEMENT_SIGNING_KEY_ID: 'pressay-entitlement-production-2026-01',
       }).STRIPE_SECRET_KEY,
     ).toBe('rk_live_placeholder');
   });
@@ -108,5 +110,24 @@ describe('environment', () => {
         STRIPE_COMMERCIAL_LAUNCH_ENABLED: 'true',
       }),
     ).toThrow('STRIPE_SECRET_KEY is required');
+  });
+
+  it('pins each environment to its own entitlement signing key', () => {
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'production',
+        ENTITLEMENT_SIGNING_KEY_ID: 'pressay-entitlement-2026-01',
+      }),
+    ).toThrow(
+      'production must sign entitlements with a pressay-entitlement-production-* key',
+    );
+    expect(() =>
+      getEnvironment({
+        DATABASE_URL: 'postgresql://example.test/pressay',
+        PRESSAY_DEPLOYMENT_ENV: 'staging',
+        ENTITLEMENT_SIGNING_KEY_ID: 'pressay-entitlement-production-2026-01',
+      }),
+    ).toThrow('only production may sign with a production entitlement key');
   });
 });

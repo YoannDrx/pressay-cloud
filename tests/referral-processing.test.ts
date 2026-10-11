@@ -34,6 +34,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   process.env.DATABASE_URL = 'postgresql://example.test/test';
   process.env.PRESSAY_DEPLOYMENT_ENV = 'development';
+  delete process.env.ENTITLEMENT_SIGNING_KEY_ID;
   process.env.PRESSAY_REFERRALS_ENABLED = 'true';
   clearEnvironmentCacheForTests();
 });
@@ -44,6 +45,7 @@ describe('referral payment processing', () => {
   });
   it('does not reward Sandbox events in production', async () => {
     process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
+    process.env.ENTITLEMENT_SIGNING_KEY_ID = 'pressay-entitlement-production-2026-01';
     clearEnvironmentCacheForTests();
     await captureReferralEvent({
       type: 'invoice.paid',

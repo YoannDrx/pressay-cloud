@@ -45,6 +45,7 @@ describe('Stripe catalogue audit', () => {
   beforeEach(() => {
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     process.env.PRESSAY_DEPLOYMENT_ENV = 'development';
+    delete process.env.ENTITLEMENT_SIGNING_KEY_ID;
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.STRIPE_COMMERCIAL_LAUNCH_ENABLED;
     delete process.env.STRIPE_AUTOMATIC_TAX_ENABLED;
@@ -71,6 +72,7 @@ describe('Stripe catalogue audit', () => {
 
   it('rejects a live catalogue in staging', async () => {
     process.env.PRESSAY_DEPLOYMENT_ENV = 'staging';
+    delete process.env.ENTITLEMENT_SIGNING_KEY_ID;
     clearEnvironmentCacheForTests();
     const liveProduct = { ...product, livemode: true };
     const liveClient = {
@@ -92,6 +94,7 @@ describe('Stripe catalogue audit', () => {
 
   it('requires a live catalogue in production', async () => {
     process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
+    process.env.ENTITLEMENT_SIGNING_KEY_ID = 'pressay-entitlement-production-2026-01';
     clearEnvironmentCacheForTests();
 
     await expect(auditStripeCatalogue(client())).rejects.toThrow(

@@ -207,6 +207,28 @@ const environmentSchema = z
       });
     }
 
+    // The desktop app pins one entitlement key per environment. Signing
+    // production snapshots with the staging key makes every Mac show Free, and
+    // the reverse would let staging tokens unlock production builds.
+    const productionKeyId = environment.ENTITLEMENT_SIGNING_KEY_ID.startsWith(
+      'pressay-entitlement-production-',
+    );
+    if (environment.PRESSAY_DEPLOYMENT_ENV === 'production' && !productionKeyId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ENTITLEMENT_SIGNING_KEY_ID'],
+        message:
+          'production must sign entitlements with a pressay-entitlement-production-* key',
+      });
+    }
+    if (environment.PRESSAY_DEPLOYMENT_ENV !== 'production' && productionKeyId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ENTITLEMENT_SIGNING_KEY_ID'],
+        message: 'only production may sign with a production entitlement key',
+      });
+    }
+
     const canonicalVercelProjectIds = {
       staging: 'prj_QKq9S0LqVbPQD6qvFZDiVNldSzLE',
       production: 'prj_wjK1Ur48HVNXiNwgoPJKilFoCHem',
