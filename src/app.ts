@@ -14,8 +14,6 @@ import { cloudRoutes } from './routes/cloud.js';
 import { desktopAuthRoutes } from './routes/desktop-auth.js';
 import { syncRoutes } from './routes/sync.js';
 import type { AppEnvironment } from './types.js';
-import { getAuth } from './auth.js';
-import { restoreAppleCallbackStateCookie } from './auth/apple-callback.js';
 
 const app = new Hono<AppEnvironment>();
 
@@ -46,13 +44,6 @@ app.route('/v1', billingRoutes);
 app.route('/v1', cloudRoutes);
 app.route('/v1', desktopAuthRoutes);
 app.route('/v1', syncRoutes);
-app.on(['GET', 'POST'], '/v1/auth/*', async (context) => {
-  const request =
-    context.req.path === '/v1/auth/callback/apple'
-      ? await restoreAppleCallbackStateCookie(context.req.raw)
-      : context.req.raw;
-  return getAuth().handler(request);
-});
 
 app.notFound((context) =>
   context.json(
@@ -78,9 +69,13 @@ app.onError((error, context) => {
     status,
   });
 
+  for (const [name, value] of Object.entries(apiError?.headers ?? {})) {
+    context.header(name, value);
+  }
   return context.json(
     {
       error: {
+        ...(apiError?.details ?? {}),
         code,
         message: apiError?.message ?? 'An unexpected error occurred',
       },

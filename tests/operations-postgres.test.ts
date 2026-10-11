@@ -4,9 +4,6 @@ import pg from 'pg';
 import { SignJWT } from 'jose';
 const sqlQuery = vi.hoisted(() => vi.fn());
 vi.mock('../src/db/client.ts', () => ({ getSql: () => ({ query: sqlQuery }) }));
-vi.mock('../src/auth.ts', () => ({
-  getAuth: () => ({ api: { getSession: () => Promise.resolve(null) } }),
-}));
 import app from '../src/app.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
 

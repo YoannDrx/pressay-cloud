@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignJWT } from 'jose';
-const getSession = vi.hoisted(() => vi.fn());
 const ownerAccount = vi.hoisted(() => vi.fn());
 const createCampaign = vi.hoisted(() => vi.fn());
 const consume = vi.hoisted(() => vi.fn());
@@ -10,7 +9,6 @@ vi.mock('../src/db/client.ts', () => ({ getSql: () => ({ query }) }));
 vi.mock('../src/billing/stripe-client.ts', () => ({
   getStripe: () => ({ promotionCodes: { retrieve: retrievePromotion } }),
 }));
-vi.mock('../src/auth.ts', () => ({ getAuth: () => ({ api: { getSession } }) }));
 vi.mock('../src/services/accounts.ts', () => ({
   bootstrapWebAccount: vi.fn(),
   recordAccountContact: vi.fn(),
@@ -23,6 +21,7 @@ vi.mock('../src/services/operations.ts', () => ({
 vi.mock('../src/services/rate-limits.ts', () => ({ consume }));
 import app from '../src/app.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
+import { configureTestJwks, externalAccessToken } from './helpers/identity.ts';
 const secret = 'operations-route-test-secret-minimum-32-characters';
 async function token(claims: Record<string, unknown> = {}) {
   return new SignJWT({
@@ -64,7 +63,6 @@ describe('Cloud administrative authorization', () => {
     process.env.PRESSAY_INTERNAL_JWT_SECRET = secret;
     process.env.PRESSAY_INTERNAL_JWT_ISSUER = 'https://press-say.app/internal';
     clearEnvironmentCacheForTests();
-    getSession.mockResolvedValue(null);
     ownerAccount.mockResolvedValue('aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970');
     createCampaign.mockResolvedValue({ id: 'campaign' });
   });
@@ -72,13 +70,13 @@ describe('Cloud administrative authorization', () => {
     expect((await app.request('/v1/admin/session')).status).toBe(401);
   });
   it('rejects client-selected referral timestamps from a direct authenticated session', async () => {
-    getSession.mockResolvedValue({
-      user: { id: 'user', email: 'user@example.test', emailVerified: true },
-      session: { id: 'session' },
-    });
+    await configureTestJwks();
     const response = await app.request('/v1/referrals/attribute', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        authorization: `Bearer ${await externalAccessToken()}`,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({
         code: 'ABCDEF123456',
         issuedAt: Math.floor(Date.now() / 1000),

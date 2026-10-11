@@ -12,13 +12,25 @@ const environmentSchema = z
     DATABASE_URL_UNPOOLED: z.url().startsWith('postgresql://').optional(),
     PRESSAY_ALLOWED_ORIGINS: z.string().default('http://localhost:1420'),
     PRESSAY_API_URL: z.url().default('http://localhost:3000'),
-    BETTER_AUTH_SECRET: z.string().min(32).optional(),
     PRESSAY_BETTER_AUTH_JWT_ISSUER: z.url().optional(),
     PRESSAY_BETTER_AUTH_JWT_AUDIENCE: z
       .string()
       .min(1)
       .default('https://api.press-say.app'),
     PRESSAY_BETTER_AUTH_JWKS_URL: z.url().optional(),
+    // Dedicated audience for the web server-side proxy (step-up capable tokens).
+    PRESSAY_WEB_PROXY_JWT_AUDIENCE: z.string().min(1).default('pressay-web-proxy'),
+    // Rollout switch: accept proxy tokens minted with the API audience until the
+    // web app emits the dedicated proxy audience, then set to false.
+    PRESSAY_WEB_PROXY_LEGACY_AUDIENCE_ALLOWED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((value) => value === 'true'),
+    // Public OAuth client of the macOS app at the web issuer (advertised only).
+    PRESSAY_DESKTOP_OAUTH_CLIENT_ID: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,128}$/)
+      .default('w9ckUgrcFp7H7wNV'),
     PRESSAY_INTERNAL_JWT_ISSUER: z.url().default('https://press-say.app/internal'),
     PRESSAY_INTERNAL_JWT_SECRET: z.string().min(32).optional(),
     DEVICE_IDENTIFIER_HMAC_SECRET: z.string().min(32).optional(),
@@ -56,14 +68,6 @@ const environmentSchema = z
       .string()
       .regex(/^[A-Za-z0-9._-]{1,80}$/)
       .default('pressay-entitlement-development'),
-    RESEND_API_KEY: z.string().startsWith('re_').optional(),
-    PRESSAY_AUTH_FROM_EMAIL: z.string().default('Pressay <account@press-say.app>'),
-    GOOGLE_CLIENT_ID: z.string().min(1).optional(),
-    GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
-    APPLE_CLIENT_ID: z.string().min(1).optional(),
-    APPLE_TEAM_ID: z.string().min(1).optional(),
-    APPLE_KEY_ID: z.string().min(1).optional(),
-    APPLE_PRIVATE_KEY: z.string().min(1).optional(),
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1).optional(),
     APP_STORE_ISSUER_ID: z.uuid().optional(),
     APP_STORE_KEY_ID: z.string().min(1).max(64).optional(),

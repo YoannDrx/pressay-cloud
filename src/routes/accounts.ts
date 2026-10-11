@@ -9,7 +9,6 @@ import {
   deviceListResponseSchema,
   entitlementResponseSchema,
 } from '../contracts/account.js';
-import { getAuth } from '../auth.js';
 import { requireAuthentication } from '../lib/auth-middleware.js';
 import { ApiError } from '../lib/errors.js';
 import {
@@ -77,9 +76,6 @@ accountRoutes.get('/me', async (context) => {
 
 accountRoutes.delete('/me', async (context) => {
   await requestAccountDeletion(context.get('authUserId'));
-  if (await getAuth().api.getSession({ headers: context.req.raw.headers })) {
-    await getAuth().api.revokeSessions({ headers: context.req.raw.headers });
-  }
   return context.body(null, 202);
 });
 

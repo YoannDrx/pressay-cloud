@@ -1,35 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const getSession = vi.hoisted(() => vi.fn());
 const restoreAppStorePurchase = vi.hoisted(() => vi.fn());
 const processAppleWebhook = vi.hoisted(() => vi.fn());
 
-vi.mock('../src/auth.ts', () => ({
-  getAuth: () => ({
-    api: { getSession },
-    handler: vi.fn(),
-  }),
-}));
+vi.mock('../src/services/rate-limits.ts', () => ({ consume: vi.fn() }));
 vi.mock('../src/services/apple-billing.ts', () => ({
   restoreAppStorePurchase,
   processAppleWebhook,
 }));
 
 import app from '../src/app.ts';
+import { bearer, configureTestIdentity } from './helpers/identity.ts';
 
 describe('App Store billing routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getSession.mockResolvedValue({
-      user: { id: 'auth-user', email: 'person@example.com' },
-      session: { id: 'session' },
-    });
+    process.env.DATABASE_URL = 'postgresql://example.test/pressay';
+    configureTestIdentity();
   });
 
   it('requires idempotency before restoring a signed transaction', async () => {
     const response = await app.request('/v1/billing/restore-app-store', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { ...(await bearer()), 'content-type': 'application/json' },
       body: JSON.stringify({ signedTransaction: `ey.${'a'.repeat(80)}.signature` }),
     });
     expect(response.status).toBe(422);
