@@ -86,12 +86,14 @@ billingRoutes.post(
         'A valid idempotency key is required',
       );
     }
+    const body = context.req.valid('json');
     return context.json(
       restoreAppStoreResponseSchema.parse(
         await restoreAppStorePurchase(
           context.get('authUserId'),
-          context.req.valid('json').signedTransaction,
+          body.signedTransaction,
           idempotencyKey,
+          { linkToCurrentAccount: body.linkToCurrentAccount === true },
         ),
       ),
     );
@@ -128,9 +130,18 @@ billingRoutes.post('/webhooks/apple', async (context) => {
     throw new ApiError(422, 'webhook_too_large', 'Webhook payload is too large');
   }
   const result = await processAppleWebhook(rawBody);
+  const status = result.duplicateOrIgnored ? 'ignored' : 'applied';
   writeLog('info', 'billing.webhook.completed', {
-    outcome: result.duplicateOrIgnored ? 'ignored' : 'applied',
+    outcome: status,
     provider: 'apple',
+    ...(result.code ? { code: result.code } : {}),
   });
-  return context.json({ received: true });
+  // Always 200 for a verified notification: Apple retries non-2xx responses for
+  // days, and an event we cannot attach (for example no appAccountToken) will
+  // never become attachable by retrying. It is recorded as `ignored` instead.
+  return context.json({
+    received: true,
+    status,
+    ...(result.code ? { code: result.code } : {}),
+  });
 });

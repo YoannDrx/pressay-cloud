@@ -16,4 +16,13 @@ describe('App Store environment boundary', () => {
       Environment.SANDBOX,
     ]);
   });
+
+  it('can stop accepting Sandbox in production outside review windows', () => {
+    expect(appleVerificationTargetsFor('production', false)).toEqual([
+      Environment.PRODUCTION,
+    ]);
+    expect(appleVerificationTargetsFor('staging', false)).toEqual([
+      Environment.SANDBOX,
+    ]);
+  });
 });

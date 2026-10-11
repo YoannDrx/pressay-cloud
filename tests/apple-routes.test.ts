@@ -40,6 +40,46 @@ describe('App Store billing routes', () => {
       body: rawBody,
     });
     expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, status: 'applied' });
     expect(processAppleWebhook).toHaveBeenCalledWith(rawBody);
+  });
+
+  it('acknowledges an unattachable notification with 200 so Apple stops retrying', async () => {
+    processAppleWebhook.mockResolvedValue({
+      duplicateOrIgnored: true,
+      code: 'missing_app_account_token',
+    });
+    const response = await app.request('/v1/webhooks/apple', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ signedPayload: `ey.${'b'.repeat(80)}.signature` }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      received: true,
+      status: 'ignored',
+      code: 'missing_app_account_token',
+    });
+  });
+
+  it('passes an explicit link confirmation to the restore service', async () => {
+    restoreAppStorePurchase.mockResolvedValue({ restored: true });
+    const signedTransaction = `ey.${'a'.repeat(80)}.signature`;
+    const response = await app.request('/v1/billing/restore-app-store', {
+      method: 'POST',
+      headers: {
+        ...(await bearer()),
+        'content-type': 'application/json',
+        'idempotency-key': 'restore-idempotency-key-0001',
+      },
+      body: JSON.stringify({ signedTransaction, linkToCurrentAccount: true }),
+    });
+    expect(response.status).toBe(200);
+    expect(restoreAppStorePurchase).toHaveBeenCalledWith(
+      expect.any(String),
+      signedTransaction,
+      'restore-idempotency-key-0001',
+      { linkToCurrentAccount: true },
+    );
   });
 });

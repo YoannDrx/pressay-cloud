@@ -11,25 +11,38 @@ import { z } from 'zod';
 
 import type { BillingInterval } from '../contracts/billing.js';
 import { getSql } from '../db/client.js';
-import { ApiError } from '../lib/errors.js';
+import { getEnvironment } from '../env.js';
+import { ApiError, stableErrorCode } from '../lib/errors.js';
+import { writeLog } from '../lib/logger.js';
 import {
   getVerifiedAppleSubscriptionStatuses,
   verifyAppleNotification,
   verifyAppleNotificationTransaction,
   verifyAppleTransaction,
 } from '../billing/apple-client.js';
+import {
+  IGNORED_PROVIDER_EVENT_CONFLICT,
+  RETRYABLE_PROVIDER_EVENT_CONFLICT,
+  recordFailedProviderEvent,
+} from './provider-events.js';
 
 const transactionSchema = z.object({
   transactionId: z.string().min(1).max(255),
   originalTransactionId: z.string().min(1).max(255),
   productId: z.string().min(1).max(255),
   purchaseDate: z.number().int().positive(),
+  originalPurchaseDate: z.number().int().positive().optional(),
   expiresDate: z.number().int().positive(),
   signedDate: z.number().int().positive(),
-  appAccountToken: z.uuid(),
+  // Absent for offer codes redeemed in the App Store, Family Sharing and
+  // purchases made outside the app. Such purchases are linked explicitly.
+  appAccountToken: z.uuid().optional(),
   revocationDate: z.number().int().positive().optional(),
   isUpgraded: z.boolean().optional(),
 });
+
+type AppleTransaction = z.infer<typeof transactionSchema>;
+type AppleEnvironment = Environment.PRODUCTION | Environment.SANDBOX;
 
 interface AppleProduct {
   productId: string;
@@ -39,7 +52,7 @@ interface AppleProduct {
 type AppleSubscriptionStatus = 'active' | 'past_due' | 'grace' | 'expired' | 'refunded';
 
 interface AppleSubscriptionRecord {
-  environment: Environment.PRODUCTION | Environment.SANDBOX;
+  environment: AppleEnvironment;
   accountId: string;
   eventId: string;
   payloadHash: string;
@@ -54,7 +67,13 @@ interface AppleSubscriptionRecord {
   cancelAtPeriodEnd: boolean;
 }
 
-function parseTransaction(transaction: JWSTransactionDecodedPayload) {
+export interface AppleWebhookResult {
+  duplicateOrIgnored: boolean;
+  /** Stable reason when the notification was recorded but not applied. */
+  code?: string;
+}
+
+function parseTransaction(transaction: JWSTransactionDecodedPayload): AppleTransaction {
   const parsed = transactionSchema.safeParse(transaction);
   if (!parsed.success) {
     throw new ApiError(
@@ -68,7 +87,7 @@ function parseTransaction(transaction: JWSTransactionDecodedPayload) {
 
 function mapAppleStatus(
   status: Status | number | undefined,
-  transaction: ReturnType<typeof parseTransaction>,
+  transaction: AppleTransaction,
 ): AppleSubscriptionStatus {
   if (transaction.revocationDate) return 'refunded';
   if (transaction.isUpgraded) return 'expired';
@@ -87,7 +106,7 @@ function mapAppleStatus(
 }
 
 function effectivePeriodEnd(
-  transaction: ReturnType<typeof parseTransaction>,
+  transaction: AppleTransaction,
   status: AppleSubscriptionStatus,
   renewal?: JWSRenewalInfoDecodedPayload,
 ): number {
@@ -103,6 +122,56 @@ function effectivePeriodEnd(
 
 function cancelAtPeriodEnd(renewal?: JWSRenewalInfoDecodedPayload): boolean {
   return renewal?.autoRenewStatus === AutoRenewStatus.OFF;
+}
+
+function storedSubscriptionId(
+  environment: AppleEnvironment,
+  originalTransactionId: string,
+): string {
+  return environment === Environment.SANDBOX
+    ? `sandbox/${originalTransactionId}`
+    : originalTransactionId;
+}
+
+/**
+ * Sandbox purchases are free. Production accepts them only because App Review
+ * buys in the Sandbox against the production API. To keep a public TestFlight
+ * build (or anyone else holding a Sandbox account) from obtaining lasting Pro:
+ * - an optional allowlist restricts Sandbox grants to review accounts;
+ * - access ends at the earlier of Apple's expiry and the first Sandbox
+ *   purchase + APPLE_SANDBOX_MAX_GRANT_HOURS, so renewals cannot extend it;
+ * - the entitlement is marked sandbox and never receives offline grace.
+ */
+function applySandboxPolicy(
+  environment: AppleEnvironment,
+  accountId: string,
+  transaction: AppleTransaction,
+  periodEndsAtMs: number,
+): { allowed: true; periodEndsAtMs: number } | { allowed: false } {
+  const settings = getEnvironment();
+  if (
+    environment !== Environment.SANDBOX ||
+    settings.PRESSAY_DEPLOYMENT_ENV !== 'production'
+  ) {
+    return { allowed: true, periodEndsAtMs };
+  }
+  const allowlist = settings.APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS;
+  if (allowlist.length > 0 && !allowlist.includes(accountId.toLowerCase())) {
+    writeLog('warn', 'billing.apple_sandbox_rejected', {
+      code: 'sandbox_account_not_allowed',
+    });
+    return { allowed: false };
+  }
+  const firstPurchase = transaction.originalPurchaseDate ?? transaction.purchaseDate;
+  const capped = Math.min(
+    periodEndsAtMs,
+    firstPurchase + settings.APPLE_SANDBOX_MAX_GRANT_HOURS * 3_600_000,
+  );
+  writeLog('warn', 'billing.apple_sandbox_grant', {
+    capped: capped < periodEndsAtMs,
+    max_hours: settings.APPLE_SANDBOX_MAX_GRANT_HOURS,
+  });
+  return { allowed: true, periodEndsAtMs: capped };
 }
 
 async function getAccountProducts(authUserId: string): Promise<{
@@ -145,14 +214,18 @@ async function getAccountProducts(authUserId: string): Promise<{
   };
 }
 
-async function applyAppleSubscription(record: AppleSubscriptionRecord): Promise<void> {
+/** Returns the finalized event state and, when not applied, a stable reason. */
+async function applyAppleSubscription(
+  record: AppleSubscriptionRecord,
+): Promise<{ state: string; errorCode: string | null }> {
+  let rows: Record<string, unknown>[];
   try {
-    await getSql().query(
+    rows = await getSql().query(
       `WITH incoming AS (
         INSERT INTO provider_event (
           provider, provider_event_id, payload_sha256, event_type, provider_occurred_at
         ) VALUES ('apple', $1, decode($2, 'hex'), $3, to_timestamp($4 / 1000.0))
-        ON CONFLICT (provider, provider_event_id) DO NOTHING
+        ${RETRYABLE_PROVIDER_EVENT_CONFLICT}
         RETURNING provider_event_id
       ), customer_upsert AS (
         INSERT INTO billing_customer (account_id, app_store_original_transaction_id)
@@ -197,7 +270,21 @@ async function applyAppleSubscription(record: AppleSubscriptionRecord): Promise<
       )
       SELECT finalize_pressay_billing_event(
         'apple', $1, ARRAY(SELECT account_id FROM subscription_upsert),
-        EXISTS (SELECT 1 FROM subscription_upsert), NULL
+        EXISTS (SELECT 1 FROM subscription_upsert),
+        CASE
+          WHEN EXISTS (SELECT 1 FROM subscription_upsert) THEN NULL
+          WHEN $13 = 'Production'
+            AND EXISTS (SELECT 1 FROM incoming)
+            AND NOT EXISTS (SELECT 1 FROM customer_upsert)
+            THEN 'apple_customer_conflict'
+          WHEN EXISTS (
+            SELECT 1 FROM billing_subscription other
+            WHERE other.provider = 'app_store'
+              AND other.provider_subscription_id = $6
+              AND other.account_id <> $5
+          ) THEN 'app_store_purchase_already_linked'
+          ELSE NULL
+        END
       ) AS state`,
       [
         record.eventId,
@@ -205,9 +292,7 @@ async function applyAppleSubscription(record: AppleSubscriptionRecord): Promise<
         record.eventType,
         record.eventOccurredAtMs,
         record.accountId,
-        record.environment === Environment.SANDBOX
-          ? `sandbox/${record.originalTransactionId}`
-          : record.originalTransactionId,
+        storedSubscriptionId(record.environment, record.originalTransactionId),
         record.productId,
         record.status,
         record.interval,
@@ -232,6 +317,51 @@ async function applyAppleSubscription(record: AppleSubscriptionRecord): Promise<
     }
     throw error;
   }
+  const state = typeof rows[0]?.state === 'string' ? rows[0].state : 'ignored';
+  if (state === 'applied') {
+    await flagDuplicateWithStripe(record);
+    return { state, errorCode: null };
+  }
+  const errorCode = await getSql().query(
+    `SELECT error_code FROM provider_event WHERE provider = 'apple' AND provider_event_id = $1`,
+    [record.eventId],
+  );
+  const code: unknown = errorCode[0]?.error_code;
+  return { state, errorCode: typeof code === 'string' ? code : null };
+}
+
+/**
+ * Apple and Stripe can both bill the same account (for example a Mac App Store
+ * purchase while a web subscription runs). Access is not doubled, but support
+ * must refund one side: flag the event and log a stable code.
+ */
+async function flagDuplicateWithStripe(record: AppleSubscriptionRecord): Promise<void> {
+  if (
+    record.environment !== Environment.PRODUCTION ||
+    !['active', 'grace', 'past_due'].includes(record.status)
+  ) {
+    return;
+  }
+  const rows = await getSql().query(
+    `UPDATE provider_event
+    SET error_code = 'duplicate_subscription_stripe_active'
+    WHERE provider = 'apple' AND provider_event_id = $1 AND error_code IS NULL
+      AND EXISTS (
+        SELECT 1 FROM billing_subscription stripe_subscription
+        WHERE stripe_subscription.account_id = $2
+          AND stripe_subscription.provider = 'stripe'
+          AND stripe_subscription.status IN ('trialing', 'active', 'past_due', 'grace')
+          AND stripe_subscription.current_period_ends_at > now()
+      )
+    RETURNING 1`,
+    [record.eventId, record.accountId],
+  );
+  if (rows.length > 0) {
+    writeLog('warn', 'billing.duplicate_subscription', {
+      provider: 'apple',
+      code: 'duplicate_subscription_stripe_active',
+    });
+  }
 }
 
 async function recordIgnoredAppleEvent(
@@ -239,21 +369,49 @@ async function recordIgnoredAppleEvent(
   payloadHash: string,
   eventType: string,
   occurredAtMs: number,
+  errorCode: string | null = null,
 ): Promise<void> {
   await getSql().query(
     `INSERT INTO provider_event (
       provider, provider_event_id, payload_sha256, event_type,
-      provider_occurred_at, state, processed_at
-    ) VALUES ('apple', $1, decode($2, 'hex'), $3, to_timestamp($4 / 1000.0), 'ignored', now())
-    ON CONFLICT (provider, provider_event_id) DO NOTHING`,
-    [eventId, payloadHash, eventType, occurredAtMs],
+      provider_occurred_at, state, error_code, processed_at
+    ) VALUES (
+      'apple', $1, decode($2, 'hex'), $3, to_timestamp($4 / 1000.0), 'ignored', $5, now()
+    )
+    ${IGNORED_PROVIDER_EVENT_CONFLICT}`,
+    [eventId, payloadHash, eventType, occurredAtMs, errorCode],
   );
+}
+
+/** Account that already owns this App Store subscription, if any. */
+async function existingSubscriptionOwner(
+  environment: AppleEnvironment,
+  originalTransactionId: string,
+): Promise<string | undefined> {
+  const rows = await getSql().query(
+    `SELECT subscription.account_id
+    FROM billing_subscription subscription
+    WHERE subscription.provider = 'app_store'
+      AND subscription.provider_subscription_id = $1
+    UNION
+    SELECT customer.account_id
+    FROM billing_customer customer
+    WHERE $2 = 'Production' AND customer.app_store_original_transaction_id = $3`,
+    [
+      storedSubscriptionId(environment, originalTransactionId),
+      environment,
+      originalTransactionId,
+    ],
+  );
+  const owner = z.object({ account_id: z.uuid() }).safeParse(rows[0]);
+  return owner.success ? owner.data.account_id : undefined;
 }
 
 export async function restoreAppStorePurchase(
   authUserId: string,
   signedTransaction: string,
   idempotencyKey: string,
+  options: { linkToCurrentAccount?: boolean } = {},
 ): Promise<{ restored: boolean }> {
   const context = await getAccountProducts(authUserId);
   const payloadHash = createHash('sha256').update(signedTransaction).digest('hex');
@@ -261,12 +419,14 @@ export async function restoreAppStorePurchase(
     .update(idempotencyKey)
     .digest('hex')}`;
   const existing = await getSql().query(
-    `SELECT encode(payload_sha256, 'hex') AS payload_hash
+    `SELECT encode(payload_sha256, 'hex') AS payload_hash, state
     FROM provider_event WHERE provider = 'apple' AND provider_event_id = $1`,
     [eventId],
   );
-  const previous = z.object({ payload_hash: z.string() }).safeParse(existing[0]);
-  if (previous.success) {
+  const previous = z
+    .object({ payload_hash: z.string(), state: z.string() })
+    .safeParse(existing[0]);
+  if (previous.success && previous.data.state !== 'failed') {
     if (previous.data.payload_hash !== payloadHash) {
       throw new ApiError(
         409,
@@ -274,7 +434,7 @@ export async function restoreAppStorePurchase(
         'Idempotency key was used for another transaction',
       );
     }
-    return { restored: true };
+    return { restored: previous.data.state === 'applied' };
   }
 
   let verified;
@@ -288,12 +448,33 @@ export async function restoreAppStorePurchase(
     );
   }
   const initial = parseTransaction(verified.transaction);
-  if (initial.appAccountToken !== context.accountId) {
-    throw new ApiError(
-      403,
-      'app_store_account_mismatch',
-      'The App Store purchase belongs to another Pressay account',
+  const boundToAccount = initial.appAccountToken === context.accountId;
+  if (!boundToAccount) {
+    // A purchase made under another Pressay account, another Apple ID flow, or
+    // without an account token: only an explicit, confirmed link may attach it,
+    // and only while no other Pressay account owns it.
+    if (!options.linkToCurrentAccount) {
+      throw new ApiError(
+        403,
+        initial.appAccountToken
+          ? 'app_store_account_mismatch'
+          : 'app_store_account_token_missing',
+        'Confirm that this App Store purchase should be linked to this Pressay account',
+        {},
+        { linkParameter: 'linkToCurrentAccount' },
+      );
+    }
+    const owner = await existingSubscriptionOwner(
+      verified.environment,
+      initial.originalTransactionId,
     );
+    if (owner && owner !== context.accountId) {
+      throw new ApiError(
+        409,
+        'app_store_purchase_already_linked',
+        'This App Store purchase is linked to another Pressay account',
+      );
+    }
   }
   if (!context.products.has(initial.productId)) {
     throw new ApiError(422, 'unknown_app_store_product', 'Unknown App Store product');
@@ -319,8 +500,8 @@ export async function restoreAppStorePurchase(
         const product = context.products.get(transaction.productId);
         if (
           !product ||
-          transaction.appAccountToken !== context.accountId ||
-          transaction.originalTransactionId !== initial.originalTransactionId
+          transaction.originalTransactionId !== initial.originalTransactionId ||
+          (boundToAccount && transaction.appAccountToken !== context.accountId)
         ) {
           return undefined;
         }
@@ -344,7 +525,20 @@ export async function restoreAppStorePurchase(
       'No matching App Store subscription was found',
     );
   }
-  await applyAppleSubscription({
+  const policy = applySandboxPolicy(
+    verified.environment,
+    context.accountId,
+    current.transaction,
+    effectivePeriodEnd(current.transaction, current.status, current.renewal),
+  );
+  if (!policy.allowed) {
+    throw new ApiError(
+      403,
+      'app_store_sandbox_not_allowed',
+      'Sandbox purchases are not accepted for this account',
+    );
+  }
+  const result = await applyAppleSubscription({
     environment: verified.environment,
     accountId: context.accountId,
     eventId,
@@ -356,25 +550,40 @@ export async function restoreAppStorePurchase(
     interval: current.product.interval,
     status: current.status,
     periodStartsAtMs: current.transaction.purchaseDate,
-    periodEndsAtMs: effectivePeriodEnd(
-      current.transaction,
-      current.status,
-      current.renewal,
-    ),
+    periodEndsAtMs: policy.periodEndsAtMs,
     cancelAtPeriodEnd: cancelAtPeriodEnd(current.renewal),
   });
+  if (result.errorCode === 'apple_customer_conflict') {
+    throw new ApiError(
+      409,
+      'apple_customer_conflict',
+      'Another Apple ID subscription is already linked to this Pressay account',
+    );
+  }
+  if (result.errorCode === 'app_store_purchase_already_linked') {
+    throw new ApiError(
+      409,
+      'app_store_purchase_already_linked',
+      'This App Store purchase is linked to another Pressay account',
+    );
+  }
+  if (!boundToAccount) {
+    writeLog('info', 'billing.apple_purchase_linked', {
+      outcome: result.state,
+    });
+  }
   return { restored: true };
 }
 
 async function resolveWebhookTarget(
-  appAccountToken: string,
-  productId: string,
-): Promise<{ accountId: string; product: AppleProduct } | undefined> {
+  environment: AppleEnvironment,
+  transaction: AppleTransaction,
+): Promise<{ accountId: string; product: AppleProduct } | { code: string }> {
   const productRows = await getSql().query(
     `SELECT provider_price_id, billing_interval
     FROM billing_product
     WHERE provider = 'app_store' AND provider_price_id = $1 AND active = true`,
-    [productId],
+    [transaction.productId],
   );
   const productRow = z
     .object({
@@ -382,20 +591,40 @@ async function resolveWebhookTarget(
       billing_interval: z.enum(['month', 'year']),
     })
     .safeParse(productRows[0]);
-  if (!productRow.success) return undefined;
+  if (!productRow.success) return { code: 'unknown_app_store_product' };
 
+  // The account that already owns the subscription wins (explicit links and
+  // purchases whose renewals arrive without a token); otherwise the token.
   const accountRows = await getSql().query(
-    `SELECT DISTINCT account.id AS account_id
+    `SELECT account.id AS account_id, 1 AS priority
+    FROM billing_subscription subscription
+    JOIN pressay_account account ON account.id = subscription.account_id
+    WHERE subscription.provider = 'app_store'
+      AND subscription.provider_subscription_id = $1
+      AND account.status = 'active'
+    UNION ALL
+    SELECT account.id AS account_id, 2 AS priority
     FROM pressay_account account
-    WHERE account.status = 'active'
-      AND account.id = $1::uuid`,
-    [appAccountToken],
+    WHERE $2::text IS NOT NULL
+      AND account.status = 'active'
+      AND account.id = $2::uuid
+    ORDER BY priority
+    LIMIT 1`,
+    [
+      storedSubscriptionId(environment, transaction.originalTransactionId),
+      transaction.appAccountToken ?? null,
+    ],
   );
-  const accounts = z.array(z.object({ account_id: z.uuid() })).parse(accountRows);
-  const account = accounts.length === 1 ? accounts[0] : undefined;
-  if (!account) return undefined;
+  const account = z.object({ account_id: z.uuid() }).safeParse(accountRows[0]);
+  if (!account.success) {
+    return {
+      code: transaction.appAccountToken
+        ? 'app_account_not_found'
+        : 'missing_app_account_token',
+    };
+  }
   return {
-    accountId: account.account_id,
+    accountId: account.data.account_id,
     product: {
       productId: productRow.data.provider_price_id,
       interval: productRow.data.billing_interval,
@@ -405,7 +634,7 @@ async function resolveWebhookTarget(
 
 export async function processAppleWebhook(
   rawBody: string,
-): Promise<{ duplicateOrIgnored: boolean }> {
+): Promise<AppleWebhookResult> {
   const payloadHash = createHash('sha256').update(rawBody).digest('hex');
   let parsedBody: unknown;
   try {
@@ -441,56 +670,91 @@ export async function processAppleWebhook(
     verified.environment === Environment.SANDBOX
       ? `sandbox/${notificationId.data}`
       : notificationId.data;
-  const signedTransaction = notification.data?.signedTransactionInfo;
-  if (!signedTransaction) {
+  const ignore = async (code: string | null): Promise<AppleWebhookResult> => {
     await recordIgnoredAppleEvent(
       eventId,
       payloadHash,
       eventType.data,
       occurredAt.data,
+      code,
     );
-    return { duplicateOrIgnored: true };
-  }
+    if (code) writeLog('warn', 'billing.apple_notification_ignored', { code });
+    return { duplicateOrIgnored: true, ...(code ? { code } : {}) };
+  };
 
-  let decoded;
   try {
-    decoded = await verifyAppleNotificationTransaction(
-      signedTransaction,
-      notification.data?.signedRenewalInfo,
+    const signedTransaction = notification.data?.signedTransactionInfo;
+    if (!signedTransaction) return await ignore(null);
+
+    let decoded;
+    try {
+      decoded = await verifyAppleNotificationTransaction(
+        signedTransaction,
+        notification.data?.signedRenewalInfo,
+        verified.environment,
+      );
+    } catch {
+      throw new ApiError(401, 'invalid_apple_transaction', 'Invalid Apple transaction');
+    }
+    const parsedTransaction = transactionSchema.safeParse(decoded.transaction);
+    if (!parsedTransaction.success)
+      return await ignore('invalid_app_store_transaction');
+    const transaction = parsedTransaction.data;
+    const target = await resolveWebhookTarget(verified.environment, transaction);
+    if ('code' in target) return await ignore(target.code);
+
+    const status = mapAppleStatus(notification.data?.status, transaction);
+    const policy = applySandboxPolicy(
       verified.environment,
+      target.accountId,
+      transaction,
+      effectivePeriodEnd(transaction, status, decoded.renewal),
     );
-  } catch {
-    throw new ApiError(401, 'invalid_apple_transaction', 'Invalid Apple transaction');
-  }
-  const transaction = parseTransaction(decoded.transaction);
-  const target = await resolveWebhookTarget(
-    transaction.appAccountToken,
-    transaction.productId,
-  );
-  if (!target) {
-    await recordIgnoredAppleEvent(
+    if (!policy.allowed) return await ignore('sandbox_account_not_allowed');
+
+    let result;
+    try {
+      result = await applyAppleSubscription({
+        environment: verified.environment,
+        accountId: target.accountId,
+        eventId: eventId,
+        payloadHash,
+        eventType: eventType.data,
+        eventOccurredAtMs: occurredAt.data,
+        originalTransactionId: transaction.originalTransactionId,
+        productId: transaction.productId,
+        interval: target.product.interval,
+        status,
+        periodStartsAtMs: transaction.purchaseDate,
+        periodEndsAtMs: policy.periodEndsAtMs,
+        cancelAtPeriodEnd: cancelAtPeriodEnd(decoded.renewal),
+      });
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.code === 'app_store_purchase_already_linked'
+      ) {
+        return await ignore(error.code);
+      }
+      throw error;
+    }
+    if (result.state !== 'applied') {
+      return {
+        duplicateOrIgnored: true,
+        ...(result.errorCode ? { code: result.errorCode } : {}),
+      };
+    }
+    return { duplicateOrIgnored: false };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) throw error;
+    await recordFailedProviderEvent({
+      provider: 'apple',
       eventId,
       payloadHash,
-      eventType.data,
-      occurredAt.data,
-    );
-    return { duplicateOrIgnored: true };
+      eventType: eventType.data,
+      occurredAtMs: occurredAt.data,
+      errorCode: stableErrorCode(error),
+    });
+    throw error;
   }
-  const status = mapAppleStatus(notification.data?.status, transaction);
-  await applyAppleSubscription({
-    environment: verified.environment,
-    accountId: target.accountId,
-    eventId: eventId,
-    payloadHash,
-    eventType: eventType.data,
-    eventOccurredAtMs: occurredAt.data,
-    originalTransactionId: transaction.originalTransactionId,
-    productId: transaction.productId,
-    interval: target.product.interval,
-    status,
-    periodStartsAtMs: transaction.purchaseDate,
-    periodEndsAtMs: effectivePeriodEnd(transaction, status, decoded.renewal),
-    cancelAtPeriodEnd: cancelAtPeriodEnd(decoded.renewal),
-  });
-  return { duplicateOrIgnored: false };
 }

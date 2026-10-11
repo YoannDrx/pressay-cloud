@@ -174,6 +174,69 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
         ).rows[0],
       ).toEqual({ app_store_original_transaction_id: '12345' });
     });
+    it('marks Sandbox access so support can tell it apart from paid access', async () => {
+      await restore(Environment.SANDBOX);
+      expect(
+        (
+          await client.query<{ sandbox: boolean }>(
+            'SELECT sandbox FROM entitlement WHERE account_id = $1',
+            [accountId],
+          )
+        ).rows[0],
+      ).toEqual({ sandbox: true });
+    });
+    it('links a tokenless purchase only after confirmation and never to a second account', async () => {
+      const transaction = {
+        transactionId: '67891',
+        originalTransactionId: '55555',
+        productId,
+        purchaseDate: now,
+        expiresDate: now + 600_000,
+        signedDate: Date.now(),
+      };
+      verifyAppleTransaction.mockResolvedValue({
+        environment: Environment.PRODUCTION,
+        transaction,
+      });
+      getVerifiedAppleSubscriptionStatuses.mockResolvedValue([
+        { transaction, status: Status.ACTIVE },
+      ]);
+      await expect(
+        restoreAppStorePurchase('test-user', 'test.signed.transaction', randomUUID()),
+      ).rejects.toMatchObject({ code: 'app_store_account_token_missing' });
+      await expect(
+        restoreAppStorePurchase('test-user', 'test.signed.transaction', randomUUID(), {
+          linkToCurrentAccount: true,
+        }),
+      ).resolves.toEqual({ restored: true });
+      expect((await entitlement()).tier).toBe('pro');
+
+      const secondAccount = randomUUID();
+      await client.query(
+        'INSERT INTO "user" (id, name, email, "emailVerified") VALUES ($1, $1, $2, true)',
+        ['second-user', 'second@example.test'],
+      );
+      await client.query(
+        'INSERT INTO pressay_account (id, auth_user_id) VALUES ($1, $2)',
+        [secondAccount, 'second-user'],
+      );
+      await client.query('INSERT INTO entitlement (account_id) VALUES ($1)', [
+        secondAccount,
+      ]);
+      await expect(
+        restoreAppStorePurchase(
+          'second-user',
+          'test.signed.transaction',
+          randomUUID(),
+          {
+            linkToCurrentAccount: true,
+          },
+        ),
+      ).rejects.toMatchObject({
+        status: 409,
+        code: 'app_store_purchase_already_linked',
+      });
+    });
     it('revokes test access after a verified refund', async () => {
       await restore(Environment.SANDBOX);
       await restore(Environment.SANDBOX, Status.REVOKED);

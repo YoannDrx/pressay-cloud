@@ -13,6 +13,11 @@ export const billingRedirectSchema = z.strictObject({
 
 export const restoreAppStoreRequestSchema = z.strictObject({
   signedTransaction: z.string().min(64).max(250_000),
+  /**
+   * Set after the user confirms that an App Store purchase made under another
+   * Apple ID (or before appAccountToken existed) belongs to this account.
+   */
+  linkToCurrentAccount: z.boolean().optional(),
 });
 
 export const restoreAppStoreResponseSchema = z.strictObject({

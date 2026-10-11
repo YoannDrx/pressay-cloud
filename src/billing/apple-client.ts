@@ -105,16 +105,23 @@ function getRuntime(
 
 export function appleVerificationTargetsFor(
   deploymentEnvironment: ReturnType<typeof getEnvironment>['PRESSAY_DEPLOYMENT_ENV'],
+  sandboxInProduction = true,
 ): readonly (Environment.PRODUCTION | Environment.SANDBOX)[] {
-  return deploymentEnvironment === 'production'
+  if (deploymentEnvironment !== 'production') return [Environment.SANDBOX];
+  // App Review buys in the Sandbox against the production API.
+  return sandboxInProduction
     ? [Environment.PRODUCTION, Environment.SANDBOX]
-    : [Environment.SANDBOX];
+    : [Environment.PRODUCTION];
 }
 
 function verificationTargets(): readonly (
   Environment.PRODUCTION | Environment.SANDBOX
 )[] {
-  return appleVerificationTargetsFor(getEnvironment().PRESSAY_DEPLOYMENT_ENV);
+  const environment = getEnvironment();
+  return appleVerificationTargetsFor(
+    environment.PRESSAY_DEPLOYMENT_ENV,
+    environment.APPLE_SANDBOX_IN_PRODUCTION_ENABLED,
+  );
 }
 
 export async function verifyAppleTransaction(

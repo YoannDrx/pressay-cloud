@@ -76,6 +76,25 @@ const environmentSchema = z
       .regex(/^[A-Za-z0-9._-]{1,80}$/)
       .default('pressay-entitlement-development'),
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1).optional(),
+    // App Review and TestFlight purchase in the Apple Sandbox against the
+    // production API, so production keeps verifying Sandbox payloads. Sandbox
+    // access is capped (see APPLE_SANDBOX_MAX_GRANT_HOURS) and can be limited
+    // to review accounts or switched off outside review windows.
+    APPLE_SANDBOX_IN_PRODUCTION_ENABLED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((value) => value === 'true'),
+    APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS: z
+      .string()
+      .default('')
+      .transform((value) =>
+        value
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.uuid())),
+    APPLE_SANDBOX_MAX_GRANT_HOURS: z.coerce.number().int().min(1).max(720).default(24),
     APP_STORE_ISSUER_ID: z.uuid().optional(),
     APP_STORE_KEY_ID: z.string().min(1).max(64).optional(),
     APP_STORE_PRIVATE_KEY_BASE64: z.string().min(1).optional(),
