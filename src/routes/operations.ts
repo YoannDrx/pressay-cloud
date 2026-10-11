@@ -57,7 +57,8 @@ operationsRoutes.use('/admin/*', async (c, next) => {
     throw new ApiError(403, 'admin_required', 'Administrator access required');
   c.set('operationsAccountId', owner);
   const mutation = c.req.method !== 'GET';
-  if (mutation || personalDataRead(c.req.path)) requireRecentStepUp(c);
+  if (mutation || personalDataRead(c.req.path))
+    requireRecentStepUp(c.get('authSessionId'), c.get('authStepUpAt'));
   if (mutation) await consume('admin_mutation', owner, 20);
   await next();
 });
@@ -66,15 +67,9 @@ function personalDataRead(path: string): boolean {
   return /\/admin\/(users(\/[^/]+)?|referrals)\/?$/.test(path);
 }
 /** Second-factor proof bound to the web session, less than ten minutes old. */
-function requireRecentStepUp(c: Context<AppEnvironment>): void {
-  const at = c.get('authStepUpAt');
+function requireRecentStepUp(sessionId: string, at: number): void {
   const now = Math.floor(Date.now() / 1000);
-  if (
-    !c.get('authSessionId') ||
-    !Number.isFinite(at) ||
-    at <= now - 600 ||
-    at > now + 30
-  )
+  if (!sessionId || !Number.isFinite(at) || at <= now - 600 || at > now + 30)
     throw new ApiError(
       403,
       'step_up_required',
