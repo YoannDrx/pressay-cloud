@@ -36,7 +36,9 @@ export async function consume(
     );
   } catch (error) {
     if (error instanceof Error && error.message.includes('rate_limit_exceeded')) {
-      throw new ApiError(429, 'rate_limit_exceeded', 'Too many requests');
+      throw new ApiError(429, 'rate_limit_exceeded', 'Too many requests', {
+        'Retry-After': '60',
+      });
     }
     throw error;
   }

@@ -11,6 +11,7 @@ import {
 } from '../contracts/account.js';
 import { requireAuthentication } from '../lib/auth-middleware.js';
 import { ApiError } from '../lib/errors.js';
+import { rateLimit } from '../lib/rate-limit.js';
 import {
   assertActiveDevice,
   bootstrapAccount,
@@ -74,7 +75,7 @@ accountRoutes.get('/me', async (context) => {
   return context.json(await getMe(context.get('authUserId'), context.get('authEmail')));
 });
 
-accountRoutes.delete('/me', async (context) => {
+accountRoutes.delete('/me', rateLimit('account_deletion', 5), async (context) => {
   await requestAccountDeletion(context.get('authUserId'), {
     acknowledgeAppleSubscription:
       context.req.query('acknowledgeAppleSubscription') === 'true',

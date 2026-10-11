@@ -10,6 +10,7 @@ import {
 import { requireAuthentication } from '../lib/auth-middleware.js';
 import { ApiError } from '../lib/errors.js';
 import { writeLog } from '../lib/logger.js';
+import { rateLimit } from '../lib/rate-limit.js';
 import {
   createBillingPortal,
   createCheckout,
@@ -28,6 +29,7 @@ billingRoutes.use('/billing/*', requireAuthentication);
 
 billingRoutes.post(
   '/billing/checkout',
+  rateLimit('billing_checkout', 10),
   zValidator('json', checkoutRequestSchema, (result) => {
     if (!result.success)
       throw new ApiError(422, 'invalid_request', 'Invalid billing request');
@@ -57,14 +59,18 @@ billingRoutes.post(
   },
 );
 
-billingRoutes.post('/billing/portal', async (context) => {
-  return context.json(
-    billingRedirectSchema.parse({
-      url: await createBillingPortal(context.get('authUserId')),
-    }),
-    201,
-  );
-});
+billingRoutes.post(
+  '/billing/portal',
+  rateLimit('billing_portal', 10),
+  async (context) => {
+    return context.json(
+      billingRedirectSchema.parse({
+        url: await createBillingPortal(context.get('authUserId')),
+      }),
+      201,
+    );
+  },
+);
 
 billingRoutes.get('/billing/status', async (context) => {
   return context.json(await getBillingStatus(context.get('authUserId')));
@@ -72,6 +78,7 @@ billingRoutes.get('/billing/status', async (context) => {
 
 billingRoutes.post(
   '/billing/restore-app-store',
+  rateLimit('apple_restore', 10),
   zValidator('json', restoreAppStoreRequestSchema, (result) => {
     if (!result.success) {
       throw new ApiError(422, 'invalid_request', 'Invalid App Store restore request');

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AppEnvironment } from '../types.js';
 import { requireAuthentication } from '../lib/auth-middleware.js';
 import { ApiError } from '../lib/errors.js';
+import { rateLimit } from '../lib/rate-limit.js';
 import { getSql } from '../db/client.js';
 import { getEnvironment } from '../env.js';
 import { getStripe } from '../billing/stripe-client.js';
@@ -94,16 +95,20 @@ function uuid(value: string) {
   if (!result.success) throw new ApiError(422, 'invalid_id', 'Invalid identifier');
   return result.data;
 }
-operationsRoutes.get('/referral-codes/:code', async (c) => {
-  requireReferrals();
-  const code = c.req.param('code');
-  if (!/^[A-Z0-9]{6,16}$/.test(code)) return c.json({ valid: false });
-  const rows = await getSql().query(
-    "SELECT 1 FROM referral_code r JOIN pressay_account a ON a.id=r.account_id WHERE r.code=$1 AND a.status='active'",
-    [code],
-  );
-  return c.json({ valid: rows.length > 0 });
-});
+operationsRoutes.get(
+  '/referral-codes/:code',
+  rateLimit('referral_code_lookup', 30, 'ip'),
+  async (c) => {
+    requireReferrals();
+    const code = c.req.param('code');
+    if (!/^[A-Z0-9]{6,16}$/.test(code)) return c.json({ valid: false });
+    const rows = await getSql().query(
+      "SELECT 1 FROM referral_code r JOIN pressay_account a ON a.id=r.account_id WHERE r.code=$1 AND a.status='active'",
+      [code],
+    );
+    return c.json({ valid: rows.length > 0 });
+  },
+);
 operationsRoutes.get('/admin/session', (c) => c.json({ role: 'owner' }));
 operationsRoutes.get('/admin/overview', async (c) => {
   const rows = await getSql().query(
