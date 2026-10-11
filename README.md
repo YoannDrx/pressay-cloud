@@ -40,7 +40,7 @@ provider's still-current entitlement.
 - Node.js 22
 - Hono on Vercel Functions
 - Neon Postgres in the EU
-- Better Auth
+- jose bearer verification against the web OAuth 2.1 issuer (no Cloud-side auth server)
 - Apple App Store Server Library
 - Zod contracts
 - Vitest

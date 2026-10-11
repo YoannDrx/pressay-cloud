@@ -11,12 +11,19 @@ envelopes. Cloud text and audio processing is stateless.
 1. Vercel terminates TLS in the EU function region.
 2. Hono assigns an opaque request ID and applies security headers and an explicit
    CORS allowlist.
-3. Better Auth resolves a short-lived session or bearer token.
+3. A bearer token is verified: either an EdDSA access token from the single web
+   identity issuer (audience `https://api.press-say.app`, JWKS), or an HS256
+   web-proxy token (audience `pressay-web-proxy`, `token_use=pressay_web_proxy`).
+   Rejections answer 401 with `WWW-Authenticate` and log a reason code.
 4. Protected handlers verify the device and current server entitlement.
 5. Billable operations reserve quota transactionally before contacting a
    provider. A second atomic claim prevents concurrent provider calls for the
    same idempotency key; the reservation is then finalized or released.
-6. Structured logs include only operation metadata from a fixed allowlist.
+6. Sensitive endpoints (checkout, portal, App Store restore, deletion, export,
+   referral code lookup) are rate-limited per user or IP with HMAC-hashed keys.
+7. Structured logs include only operation metadata from a fixed allowlist;
+   failures log the error class, a stable code, the cause chain and the route
+   pattern, never messages or raw paths.
 
 ## Data stores
 
@@ -31,13 +38,14 @@ envelopes. Cloud text and audio processing is stateless.
 
 ## Deployment
 
-- The new backend is validated manually in the isolated Vercel project
-  `pressay-cloud-staging`; it does not own `api.press-say.app`.
-- Git auto-deploy is intentionally disconnected until the stacked backend pull
-  requests are merged and Preview has its own isolated credentials.
-- SQL is tested on a Neon child branch before production application.
+- `pressay-cloud-production` serves `api.press-say.app`; `pressay-cloud-staging`
+  is the isolated staging project. Production deploys only from `main`.
+- SQL is tested on a Neon child branch before production application; the
+  current schema is `0019_billing_hardening.sql`.
 - Production deploys use `fra1` and a pooled Neon URL in the same EU region.
 - Migrations use the direct URL and run as a separate release operation.
+- `.github/workflows/ci.yml` runs typecheck, lint, format, unit and PostgreSQL
+  tests, migrations, secret scan and dependency audit on every pull request.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for the staging boundary, required gates and
 domain cutover procedure.
@@ -57,13 +65,18 @@ fallback from a local request.
 
 ## Entitlement signing
 
-The server signs device-bound entitlement snapshots with Ed25519. The first key
-is `pressay-entitlement-2026-01`; its private PKCS#8 PEM is stored Base64-encoded
-in the macOS Keychain under service `app.pressay.cloud.entitlement-signing`. It
-must be decoded back to PEM before it is copied to the Vercel production secret
-`ENTITLEMENT_SIGNING_PRIVATE_KEY` at deployment.
-Only [the public JWKS](../config/entitlement-jwks.json) is committed and embedded
-by the desktop application.
+The server signs device-bound entitlement snapshots with Ed25519, one key per
+environment, matching the keys pinned in the desktop app:
+
+- staging and development: `pressay-entitlement-2026-01`;
+- production: `pressay-entitlement-production-2026-01`.
+
+The environment parser refuses a non-production key id in production and a
+production key id elsewhere. Private PKCS#8 PEMs are stored Base64-encoded in
+the macOS Keychain under service `app.pressay.cloud.entitlement-signing` and
+decoded back to PEM before being copied to `ENTITLEMENT_SIGNING_PRIVATE_KEY` in
+the matching Vercel project. Only [the public JWKS](../config/entitlement-jwks.json)
+(both public keys) is committed.
 
 Rotation is additive: publish and embed the new public key, deploy the server so
 it signs with the new `kid`, wait at least 72 hours (the maximum offline grace),
@@ -72,8 +85,11 @@ then remove the old public key. Private keys are never stored in GitHub.
 ## App Store billing
 
 The Mac App Store build passes the Pressay account UUID as StoreKit's
-`appAccountToken`. `POST /v1/billing/restore-app-store` accepts only a signed
-StoreKit 2 transaction whose token matches the authenticated account, refreshes
+`appAccountToken`. `POST /v1/billing/restore-app-store` accepts a signed
+StoreKit 2 transaction whose token matches the authenticated account; a purchase
+without a token or bound to another token (offer codes, Family Sharing, another
+Apple ID flow) is linked only when the client sends `linkToCurrentAccount: true`
+after the user confirms, and never if another Pressay account owns it. It refreshes
 the subscription through the App Store Server API, and verifies every returned
 JWS. `POST /v1/webhooks/apple` accepts only App Store Server Notifications V2.
 
@@ -89,3 +105,46 @@ App Store subscription, preserves a longer support grant, and increments the
 signed entitlement revision only when effective rights change. Refunds,
 revocations and out-of-order provider events therefore cannot silently erase a
 different current entitlement.
+
+Notifications without a usable `appAccountToken` that no account already owns
+are acknowledged with 200 `{"status":"ignored","code":"missing_app_account_token"}`
+and recorded as ignored, so Apple stops retrying. Processing failures are stored
+as `provider_event.state='failed'` with a stable code and retried on redelivery.
+
+## Stripe billing
+
+Webhooks re-read the subscription from Stripe before projecting it, so out-of-
+order and same-second events converge on Stripe's current state. A `past_due`
+subscription keeps Pro for `STRIPE_PAST_DUE_GRACE_DAYS` from the period start at
+most. A full refund or a lost dispute cancels the Stripe subscription
+immediately; a won dispute restores Stripe's current state. Checkout refuses a
+second live subscription (Stripe or App Store, 409), and a concurrent App Store
+activation is flagged `duplicate_subscription_stripe_active` for support. Stripe
+Tax is behind `STRIPE_AUTOMATIC_TAX_ENABLED`; catalogue prices are tax-inclusive.
+
+## Account deletion
+
+`DELETE /v1/me` answers 409 `apple_subscription_active` (with the App Store
+subscriptions URL) while an App Store subscription is live, unless the client
+retries with `?acknowledgeAppleSubscription=true`. The deletion job deletes the
+Stripe customer, then calls the web `POST /api/internal/identity-deletion`
+(HS256, audience `pressay-web-internal`) and only then removes the Cloud account;
+any failure is retried with backoff.
+
+## Retention matrix
+
+| Data                                                           | Retention                                                                   | Mechanism               |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------- |
+| Account, devices, entitlement, usage counters, sync ciphertext | Until account deletion                                                      | Cascade on deletion job |
+| Idempotency records                                            | 30 days after creation, once expired (`PRESSAY_RETENTION_IDEMPOTENCY_DAYS`) | Daily purge             |
+| Settled usage reservations                                     | 395 days (`PRESSAY_RETENTION_USAGE_RESERVATION_DAYS`)                       | Daily purge             |
+| Provider event receipts without financial record               | 400 days (`PRESSAY_RETENTION_PROVIDER_EVENT_DAYS`)                          | Daily purge             |
+| Financial ledger (`billing_financial_event`) and its events    | Accounting obligation (10 years in France)                                  | Kept                    |
+| `operations_audit`                                             | Kept for accountability                                                     | Kept                    |
+| Rate-limit buckets                                             | Until window expiry                                                         | Daily purge             |
+| Retired Cloud sessions and verifications                       | Until expiry                                                                | Daily purge             |
+| Deletion tombstone (`auth_user_id`)                            | Kept to prevent re-attribution                                              | Kept                    |
+
+`GET /v1/me/export` returns the caller's data as JSON (account, contact,
+devices, entitlement, subscriptions, payments, consents, usage, grants, referral
+data, sync volume) without hashes, keys or provider identifiers.

@@ -2,19 +2,21 @@
 
 ## Environments
 
-The new control plane currently has one validated deployment target:
+Two canonical deployments exist. Staging:
 
 - Vercel project: `pressay-cloud-staging`
 - URL: `https://pressay-cloud-staging.vercel.app`
 - Runtime: Node.js 22, Hono, region `fra1`
 - Database: Neon project `snowy-meadow-52007899`, branch
   `br-old-rain-asfu6s3y`, database `pressay`, schema
-  `0014_migrate_legacy_accounts.sql`
+  `0019_billing_hardening.sql` once this release is applied
 - Branch parent/restore source: `br-plain-sunset-asxlyj0q`, validated before the
   staging branch was created
 - Cloud processing: disabled by default
 
-The commercial control plane is isolated but not yet serving production traffic:
+Production serves `https://api.press-say.app` (domain attached to
+`pressay-cloud-production` since late August 2026; the legacy `pressay-api`
+project only keeps `pressay-api.vercel.app`):
 
 - Vercel project: `pressay-cloud-production`
 - Vercel project ID: `prj_wjK1Ur48HVNXiNwgoPJKilFoCHem`
@@ -23,16 +25,15 @@ The commercial control plane is isolated but not yet serving production traffic:
 - Neon project: `wandering-boat-94901475`, region `aws-eu-central-1`
 - Neon primary branch: `br-square-king-b224neq5`, database `pressay_cloud`
 - Pre-schema restore branch: `br-ancient-bird-b2mvkrex`
-- Schema: `0014_migrate_legacy_accounts.sql`
+- Schema: `0018_referral_reversal_replay.sql` before this release;
+  `0019_billing_hardening.sql` must be applied before deploying it
 - Cloud processing and Stripe commercial launch: disabled
+- Entitlement signing key: `pressay-entitlement-production-2026-01` (the
+  environment parser rejects any other prefix in production)
 
-The Vercel project has independent production secrets and is connected to Git.
-Its first immutable `main` deployment must pass health, readiness, OAuth and
-rollback validation before the production domain is moved.
-
-The existing Vercel project `pressay-api` owns `https://api.press-say.app` and is
-outside this repository's deployment flow. Never link, deploy or move that
-domain from this checkout until the production cutover gate is approved.
+The Vercel project has independent production secrets and is connected to Git;
+production deployments come only from immutable `main` commits. The legacy
+`pressay-api` project is outside this repository's deployment flow.
 
 Preview deployments must not connect to the production database. Keep previews
 disabled or attach a dedicated Neon branch before enabling non-`main` Git deploys.
@@ -51,27 +52,36 @@ runtime environment validation.
 
 ## Required variables
 
-Environment variables are encrypted in their respective Vercel projects. At a
-minimum, a deploy requires:
+Environment variables are encrypted in their respective Vercel projects; the
+authoritative list with defaults is `.env.example` and `src/env.ts`. A
+production deploy requires at least:
 
-- `DATABASE_URL`
-- `PRESSAY_DEPLOYMENT_ENV`
-- `BETTER_AUTH_SECRET`
-- `DEVICE_IDENTIFIER_HMAC_SECRET`
-- `RATE_LIMIT_HMAC_SECRET`
-- `CRON_SECRET`
-- `ENTITLEMENT_SIGNING_PRIVATE_KEY`
-- `ENTITLEMENT_SIGNING_KEY_ID`
-- `OPENAI_API_KEY`
-- `PRESSAY_API_URL`
-- `PRESSAY_ALLOWED_ORIGINS`
-- `PRESSAY_CLOUD_PROCESSING_ENABLED=false`
-- the complete Sign in with Apple credential set used by the Cloud-native flow
+- `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `PRESSAY_DEPLOYMENT_ENV=production`
+- `PRESSAY_API_URL`, `PRESSAY_ALLOWED_ORIGINS` (exact origins; normalized)
+- identity: `PRESSAY_BETTER_AUTH_JWT_ISSUER`, `PRESSAY_BETTER_AUTH_JWKS_URL`,
+  `PRESSAY_BETTER_AUTH_JWT_AUDIENCE`, `PRESSAY_WEB_PROXY_JWT_AUDIENCE`,
+  `PRESSAY_WEB_PROXY_LEGACY_AUDIENCE_ALLOWED`, `PRESSAY_DESKTOP_OAUTH_CLIENT_ID`
+- web/Cloud internal calls: `PRESSAY_INTERNAL_JWT_ISSUER`,
+  `PRESSAY_INTERNAL_JWT_SECRET`, `PRESSAY_CLOUD_INTERNAL_JWT_ISSUER`,
+  `PRESSAY_WEB_INTERNAL_ORIGIN` (account deletion removes the web identity)
+- `DEVICE_IDENTIFIER_HMAC_SECRET`, `RATE_LIMIT_HMAC_SECRET`, `CRON_SECRET`,
+  `PRESSAY_CAMPAIGN_SECRET`, `PRESSAY_OPERATIONS_OWNER_EMAILS`
+- `ENTITLEMENT_SIGNING_PRIVATE_KEY`, `ENTITLEMENT_SIGNING_KEY_ID`
+- the `APP_STORE_*` set, `APPLE_APP_BUNDLE_IDENTIFIER` and the
+  `APPLE_SANDBOX_*` review policy
+- the `STRIPE_*` set, including `STRIPE_AUTOMATIC_TAX_ENABLED`,
+  `STRIPE_TAX_ID_COLLECTION_ENABLED`, `STRIPE_PRODUCT_TAX_CODE` and
+  `STRIPE_PAST_DUE_GRACE_DAYS`
+- `PRESSAY_CLOUD_PROCESSING_ENABLED=false` until `OPENAI_API_KEY` and the
+  retention wording are in place
 
-Google desktop login is served by the OAuth 2.1 issuer on `press-say.app` and
-its credentials belong to `pressay-web`, not this project. Do not duplicate the
-Google client secret into Cloud merely to make `/desktop-auth/config` advertise
-Google. The staging validator probes the issuer metadata separately.
+Cloud no longer runs its own Better Auth. All end-user identity comes from the
+OAuth 2.1 issuer on `press-say.app`; `BETTER_AUTH_SECRET`, `RESEND_API_KEY`,
+`PRESSAY_AUTH_FROM_EMAIL`, `GOOGLE_CLIENT_*` and the Sign in with Apple
+`APPLE_CLIENT_ID`/`APPLE_TEAM_ID`/`APPLE_KEY_ID`/`APPLE_PRIVATE_KEY` variables
+are no longer read and should be removed from both Vercel projects. The retired
+`/v1/desktop-auth/social/*`, `/callback`, `/error` and `/v1/auth/*` routes answer
+410 `desktop_auth_moved_to_web`.
 
 Stripe credentials are pinned to the declared Pressay environment. Canonical
 staging accepts only a restricted `rk_test_` key and Stripe test-mode Product
@@ -87,14 +97,23 @@ production. Never copy live Price IDs into staging, even though Stripe uses the
 same account ID in both modes.
 
 App Store development and staging accept only Apple Sandbox payloads.
-Production verifies Production first, then Sandbox for App Review and TestFlight.
+Production verifies Production first, then Sandbox for App Review and TestFlight
+while `APPLE_SANDBOX_IN_PRODUCTION_ENABLED=true`. In production a Sandbox grant
+lasts at most `APPLE_SANDBOX_MAX_GRANT_HOURS` from the first Sandbox purchase,
+carries no offline grace, is flagged `entitlement.sandbox`, and can be limited to
+review accounts with `APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS`.
 Both paths require Apple's signature, the configured bundle and an account-bound
 transaction, followed by a status refresh against the matching Apple Server API.
 Sandbox subscriptions use a separate ID namespace and never change the production
 customer linkage. Paid subscriptions take precedence; test access receives no
 extra offline grace beyond Apple's verified expiry.
 
-Apply migration `0016_app_review_sandbox.sql` before deploying this server.
+Apply migration `0019_billing_hardening.sql` before deploying this release: it
+adds `billing_subscription.grace_ends_at` and `entitlement.sandbox` and replaces
+`recompute_pressay_entitlement` (past_due grace cap, Sandbox flag). It is
+additive and re-projects only past_due and Sandbox accounts.
+
+Migration `0016_app_review_sandbox.sql` (already applied)
 It also fixes billing finalization: sibling data-modifying CTEs share a snapshot,
 so an outer UPDATE could not see the provider event just inserted. Apple and
 Stripe now finalize and recompute access within a dependent volatile function.
@@ -147,24 +166,23 @@ After verification, inspect the final deployment for 500 responses. Do not
 disable Vercel Deployment Protection to test a protected deployment; use
 `vercel curl`.
 
-## Production cutover gate
+## Production cutover
 
-Do not move `api.press-say.app` until all of the following are true:
+The `api.press-say.app` cutover to `pressay-cloud-production` is done. Keep a
+documented domain rollback target and never let a staging deployment reassign
+the production domain. Before opening sales, the remaining gates are: Vercel Pro
+(commercial use, hourly crons), Neon PITR beyond 6 hours plus logical dumps,
+alerting on 5xx and webhook failures, Stripe Tax activation, and the production
+entitlement key check (`GET /v1/entitlements/jwks` must return
+`pressay-entitlement-production-2026-01`).
 
-1. the stacked backend pull requests have been reviewed and merged;
-2. migrations have passed on a fresh Neon branch and have a production backup
-   and rollback decision;
-3. Stripe, Apple, email and OAuth production credentials are configured;
-4. OpenAI retention wording is published and the Cloud kill switch has passed
-   quota, rate-limit and cost-alert tests;
-5. account deletion, webhooks, entitlement signing and E2EE recovery pass the
-   release matrix;
-6. the desktop client uses a configurable staging endpoint and passes its
-   offline/local fallback tests;
-7. `api.press-say.app` has a documented DNS/domain rollback target.
+## Scheduled jobs
 
-The cutover is a separate, explicit operation. A staging deployment must never
-implicitly reassign the production domain.
+`vercel.json` runs `/v1/internal/jobs/account-deletions` and
+`/v1/internal/jobs/referral-rewards` daily (Hobby limit). Each run works for up
+to 50 s and reports `drained`. The deletion job also removes expired rate-limit
+buckets and purges operational records (see the retention matrix in
+ARCHITECTURE.md). Switch both to hourly after moving to Vercel Pro.
 
 Migration `0014_migrate_legacy_accounts.sql` preserves the stable identity subject
 and effective legacy entitlement before cutover. It deliberately does not copy
