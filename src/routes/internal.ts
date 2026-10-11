@@ -8,6 +8,7 @@ import { ApiError } from '../lib/errors.js';
 import { writeLog } from '../lib/logger.js';
 import { runAccountDeletionBatch } from '../services/account-deletion.js';
 import { cleanupExpiredRateLimitBuckets } from '../services/rate-limits.js';
+import { purgeExpiredRecords } from '../services/retention.js';
 import type { AppEnvironment } from '../types.js';
 
 export const internalRoutes = new Hono<AppEnvironment>();
@@ -22,14 +23,20 @@ internalRoutes.get('/internal/jobs/account-deletions', async (context) => {
   const deadlineAt = Date.now() + JOB_BUDGET_MS;
   const deletions = await runAccountDeletionBatch(JOB_MAX_ITEMS, { deadlineAt });
   const rateLimitBucketsDeleted = await cleanupExpiredRateLimitBuckets();
+  const purged = await purgeExpiredRecords();
   writeLog('info', 'account_deletions.completed', {
     claimed: deletions.claimed,
     completed: deletions.completed,
     failed: deletions.failed,
     drained: deletions.drained,
     rate_limit_buckets_deleted: rateLimitBucketsDeleted,
+    purged_idempotency_records: purged.idempotencyRecords,
+    purged_usage_reservations: purged.usageReservations,
+    purged_provider_events: purged.providerEvents,
+    purged_legacy_sessions: purged.legacySessions,
+    purged_legacy_verifications: purged.legacyVerifications,
   });
-  return context.json({ ...deletions, rateLimitBucketsDeleted });
+  return context.json({ ...deletions, rateLimitBucketsDeleted, purged });
 });
 
 internalRoutes.get('/internal/jobs/referral-rewards', async (context) => {

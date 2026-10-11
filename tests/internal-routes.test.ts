@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runAccountDeletionBatch = vi.hoisted(() => vi.fn());
 const cleanupExpiredRateLimitBuckets = vi.hoisted(() => vi.fn());
+const purgeExpiredRecords = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/services/account-deletion.ts', () => ({
   runAccountDeletionBatch,
@@ -9,6 +10,7 @@ vi.mock('../src/services/account-deletion.ts', () => ({
 vi.mock('../src/services/rate-limits.ts', () => ({
   cleanupExpiredRateLimitBuckets,
 }));
+vi.mock('../src/services/retention.ts', () => ({ purgeExpiredRecords }));
 
 import app from '../src/app.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
@@ -28,6 +30,13 @@ describe('internal operational routes', () => {
       drained: true,
     });
     cleanupExpiredRateLimitBuckets.mockResolvedValue(12);
+    purgeExpiredRecords.mockResolvedValue({
+      idempotencyRecords: 3,
+      usageReservations: 0,
+      providerEvents: 1,
+      legacySessions: 0,
+      legacyVerifications: 0,
+    });
   });
 
   it('rejects requests without the Vercel cron bearer secret', async () => {
@@ -47,6 +56,13 @@ describe('internal operational routes', () => {
       failed: 0,
       drained: true,
       rateLimitBucketsDeleted: 12,
+      purged: {
+        idempotencyRecords: 3,
+        usageReservations: 0,
+        providerEvents: 1,
+        legacySessions: 0,
+        legacyVerifications: 0,
+      },
     });
     expect(runAccountDeletionBatch).toHaveBeenCalledWith(500, {
       deadlineAt: expect.any(Number) as number,
@@ -56,6 +72,7 @@ describe('internal operational routes', () => {
     };
     expect(options.deadlineAt - Date.now()).toBeLessThanOrEqual(50_000);
     expect(cleanupExpiredRateLimitBuckets).toHaveBeenCalledOnce();
+    expect(purgeExpiredRecords).toHaveBeenCalledOnce();
   });
 
   it('reports referral reward progress for an authenticated cron', async () => {

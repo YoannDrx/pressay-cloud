@@ -76,6 +76,25 @@ const environmentSchema = z
       .regex(/^[A-Za-z0-9._-]{1,80}$/)
       .default('pressay-entitlement-development'),
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1).optional(),
+    // Retention of operational records (see docs/ARCHITECTURE.md).
+    PRESSAY_RETENTION_IDEMPOTENCY_DAYS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(3650)
+      .default(30),
+    PRESSAY_RETENTION_USAGE_RESERVATION_DAYS: z.coerce
+      .number()
+      .int()
+      .min(31)
+      .max(3650)
+      .default(395),
+    PRESSAY_RETENTION_PROVIDER_EVENT_DAYS: z.coerce
+      .number()
+      .int()
+      .min(90)
+      .max(3650)
+      .default(400),
     // App Review and TestFlight purchase in the Apple Sandbox against the
     // production API, so production keeps verifying Sandbox payloads. Sandbox
     // access is capped (see APPLE_SANDBOX_MAX_GRANT_HOURS) and can be limited

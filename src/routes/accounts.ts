@@ -27,12 +27,14 @@ import {
   getEntitlementPublicJwk,
   signEntitlementSnapshot,
 } from '../services/entitlements.js';
+import { exportAccountData } from '../services/data-export.js';
 import type { AppEnvironment } from '../types.js';
 
 export const accountRoutes = new Hono<AppEnvironment>();
 
 accountRoutes.use('/accounts/*', requireAuthentication);
 accountRoutes.use('/me', requireAuthentication);
+accountRoutes.use('/me/*', requireAuthentication);
 accountRoutes.use('/devices', requireAuthentication);
 accountRoutes.use('/devices/*', requireAuthentication);
 accountRoutes.use('/entitlements', requireAuthentication);
@@ -81,6 +83,16 @@ accountRoutes.delete('/me', rateLimit('account_deletion', 5), async (context) =>
       context.req.query('acknowledgeAppleSubscription') === 'true',
   });
   return context.body(null, 202);
+});
+
+accountRoutes.get('/me/export', rateLimit('account_export', 5), async (context) => {
+  const data = await exportAccountData(context.get('authUserId'));
+  context.header('Cache-Control', 'private, no-store');
+  context.header(
+    'Content-Disposition',
+    'attachment; filename="pressay-cloud-export.json"',
+  );
+  return context.json(data);
 });
 
 accountRoutes.get('/devices', async (context) => {
