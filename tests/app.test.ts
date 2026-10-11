@@ -10,6 +10,7 @@ vi.mock('../src/db/health.ts', () => ({
 }));
 
 import app from '../src/app.ts';
+import { databaseReadiness } from '../src/db/health.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
 
 describe('Pressay Cloud API', () => {
@@ -47,6 +48,58 @@ describe('Pressay Cloud API', () => {
       headers: { Origin: 'https://attacker.example' },
     });
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('accepts an allowlisted origin configured with a trailing slash and allows PATCH', async () => {
+    process.env.PRESSAY_ALLOWED_ORIGINS =
+      'https://Press-Say.app/ , https://admin.example.test';
+    const response = await app.request('/v1/health', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://press-say.app',
+        'Access-Control-Request-Method': 'PATCH',
+      },
+    });
+    expect(response.headers.get('access-control-allow-origin')).toBe(
+      'https://press-say.app',
+    );
+    expect(response.headers.get('access-control-allow-methods')).toContain('PATCH');
+    const rejected = await app.request('/v1/health', {
+      headers: { Origin: 'https://press-say.app.attacker.example' },
+    });
+    expect(rejected.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('logs the error class, a stable code, the route pattern and the cause chain', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const databaseError = Object.assign(
+      new Error('connection to customer@example.com failed', {
+        cause: new TypeError('fetch failed'),
+      }),
+      { code: '08006' },
+    );
+    vi.mocked(databaseReadiness).mockRejectedValueOnce(databaseError);
+
+    const response = await app.request('/v1/ready', {
+      headers: { 'x-request-id': 'request-id-for-test-0001' },
+    });
+    expect(response.status).toBe(500);
+    const entry = JSON.parse(String(errorLog.mock.calls.at(-1)?.[0])) as Record<
+      string,
+      unknown
+    >;
+    expect(entry).toMatchObject({
+      event: 'request.failed',
+      code: 'internal_error',
+      error_code: 'database_08006',
+      error_name: 'Error',
+      cause_chain: 'Error>TypeError',
+      method: 'GET',
+      route: '/v1/ready',
+      status: 500,
+    });
+    expect(JSON.stringify(entry)).not.toContain('example.com');
+    errorLog.mockRestore();
   });
 
   it('returns a stable error envelope for unknown routes', async () => {

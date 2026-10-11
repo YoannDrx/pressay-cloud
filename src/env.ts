@@ -259,14 +259,24 @@ export type Environment = z.infer<typeof environmentSchema> & {
 
 let cachedEnvironment: Environment | undefined;
 
+/**
+ * Normalize a comma-separated origin list to exact browser origins
+ * (scheme + host + port, lowercase, no trailing slash or path). Throws on an
+ * entry that is not a URL so a typo fails configuration instead of CORS.
+ */
+export function parseAllowedOrigins(value: string): string[] {
+  return value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => new URL(origin).origin);
+}
+
 export function getEnvironment(source: NodeJS.ProcessEnv = process.env): Environment {
   if (source === process.env && cachedEnvironment) return cachedEnvironment;
 
   const parsed = environmentSchema.parse(source);
-  const allowedOrigins = parsed.PRESSAY_ALLOWED_ORIGINS.split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean)
-    .map((origin) => new URL(origin).origin);
+  const allowedOrigins = parseAllowedOrigins(parsed.PRESSAY_ALLOWED_ORIGINS);
 
   if (allowedOrigins.length === 0) {
     throw new Error('PRESSAY_ALLOWED_ORIGINS must contain at least one origin');
