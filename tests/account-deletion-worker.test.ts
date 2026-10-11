@@ -49,6 +49,7 @@ describe('account deletion worker', () => {
       claimed: 1,
       completed: 1,
       failed: 0,
+      drained: true,
     });
     expect(deleteStripeCustomer).toHaveBeenCalledWith(job.stripe_customer_id);
     expect(deleteWebIdentity).toHaveBeenCalledWith(job.auth_user_id);
@@ -78,6 +79,7 @@ describe('account deletion worker', () => {
       claimed: 1,
       completed: 0,
       failed: 1,
+      drained: true,
     });
     expect(query.mock.calls[1]?.[0]).toContain("state = 'failed'");
     expect(query.mock.calls[1]?.[1]).toContain('web_identity_unavailable');
@@ -97,10 +99,35 @@ describe('account deletion worker', () => {
       claimed: 1,
       completed: 0,
       failed: 1,
+      drained: true,
     });
     expect(query.mock.calls[1]?.[0]).toContain("state = 'failed'");
     expect(JSON.stringify(query.mock.calls)).not.toContain(
       'temporary provider failure',
     );
+  });
+
+  it('drains a backlog of 100 deletions in one invocation', async () => {
+    let remaining = 100;
+    query.mockImplementation((sql: string) => {
+      if (sql.includes('complete_pressay_account_deletion')) {
+        return Promise.resolve([{ completed: true }]);
+      }
+      if (remaining === 0) return Promise.resolve([]);
+      remaining -= 1;
+      return Promise.resolve([{ ...job, stripe_customer_id: null }]);
+    });
+
+    await expect(
+      runAccountDeletionBatch(500, { deadlineAt: Date.now() + 50_000 }),
+    ).resolves.toEqual({ claimed: 100, completed: 100, failed: 0, drained: true });
+    expect(deleteWebIdentity).toHaveBeenCalledTimes(100);
+  });
+
+  it('stops claiming when too little of the time budget remains', async () => {
+    await expect(
+      runAccountDeletionBatch(500, { deadlineAt: Date.now() + 5_000 }),
+    ).resolves.toEqual({ claimed: 0, completed: 0, failed: 0, drained: false });
+    expect(query).not.toHaveBeenCalled();
   });
 });

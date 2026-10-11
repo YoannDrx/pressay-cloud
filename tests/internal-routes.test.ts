@@ -25,6 +25,7 @@ describe('internal operational routes', () => {
       claimed: 1,
       completed: 1,
       failed: 0,
+      drained: true,
     });
     cleanupExpiredRateLimitBuckets.mockResolvedValue(12);
   });
@@ -44,9 +45,28 @@ describe('internal operational routes', () => {
       claimed: 1,
       completed: 1,
       failed: 0,
+      drained: true,
       rateLimitBucketsDeleted: 12,
     });
-    expect(runAccountDeletionBatch).toHaveBeenCalledWith(10);
+    expect(runAccountDeletionBatch).toHaveBeenCalledWith(500, {
+      deadlineAt: expect.any(Number) as number,
+    });
+    const options = runAccountDeletionBatch.mock.calls[0]?.[1] as {
+      deadlineAt: number;
+    };
+    expect(options.deadlineAt - Date.now()).toBeLessThanOrEqual(50_000);
     expect(cleanupExpiredRateLimitBuckets).toHaveBeenCalledOnce();
+  });
+
+  it('reports referral reward progress for an authenticated cron', async () => {
+    const response = await app.request('/v1/internal/jobs/referral-rewards', {
+      headers: { authorization: `Bearer ${cronSecret}` },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      processed: 0,
+      attempted: 0,
+      drained: true,
+    });
   });
 });

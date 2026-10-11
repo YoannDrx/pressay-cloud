@@ -12,14 +12,21 @@ import type { AppEnvironment } from '../types.js';
 
 export const internalRoutes = new Hono<AppEnvironment>();
 
+/** Work budget per cron invocation; vercel.json allows 60 s per function. */
+export const JOB_BUDGET_MS = 50_000;
+/** Upper bound of jobs per invocation, far above the expected daily volume. */
+const JOB_MAX_ITEMS = 500;
+
 internalRoutes.get('/internal/jobs/account-deletions', async (context) => {
   requireInternalSecret(context.req.header('authorization'));
-  const deletions = await runAccountDeletionBatch(10);
+  const deadlineAt = Date.now() + JOB_BUDGET_MS;
+  const deletions = await runAccountDeletionBatch(JOB_MAX_ITEMS, { deadlineAt });
   const rateLimitBucketsDeleted = await cleanupExpiredRateLimitBuckets();
   writeLog('info', 'account_deletions.completed', {
     claimed: deletions.claimed,
     completed: deletions.completed,
     failed: deletions.failed,
+    drained: deletions.drained,
     rate_limit_buckets_deleted: rateLimitBucketsDeleted,
   });
   return context.json({ ...deletions, rateLimitBucketsDeleted });
@@ -27,7 +34,13 @@ internalRoutes.get('/internal/jobs/account-deletions', async (context) => {
 
 internalRoutes.get('/internal/jobs/referral-rewards', async (context) => {
   requireInternalSecret(context.req.header('authorization'));
-  return context.json(await runReferralRewards(10));
+  const rewards = await runReferralRewards(JOB_MAX_ITEMS, Date.now() + JOB_BUDGET_MS);
+  writeLog('info', 'referral_rewards.completed', {
+    attempted: rewards.attempted,
+    processed: rewards.processed,
+    drained: rewards.drained,
+  });
+  return context.json(rewards);
 });
 
 function requireInternalSecret(authorization: string | undefined): void {

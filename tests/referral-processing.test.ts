@@ -130,7 +130,11 @@ describe('referral payment processing', () => {
       .mockResolvedValueOnce([{}])
       .mockResolvedValue([]);
     createBalanceTransaction.mockResolvedValue({ id: 'cbtxn_test' });
-    expect(await runReferralRewards(1)).toEqual({ processed: 1 });
+    expect(await runReferralRewards(1)).toEqual({
+      processed: 1,
+      attempted: 1,
+      drained: false,
+    });
     expect(createBalanceTransaction).toHaveBeenCalledWith(
       'cus_test',
       expect.objectContaining({ amount: -567, currency: 'eur' }),

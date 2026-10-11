@@ -151,17 +151,30 @@ async function executeDeletionJob(job: DeletionJob): Promise<boolean> {
   }
 }
 
+/**
+ * Process queued deletions until the queue is empty, `limit` jobs were claimed
+ * or the deadline is near. A job is only claimed while at least `reserveMs`
+ * remain, so a Stripe or web identity call (8 s timeouts) cannot overrun the
+ * function's maximum duration.
+ */
 export async function runAccountDeletionBatch(
   limit = 10,
-): Promise<{ claimed: number; completed: number; failed: number }> {
-  const boundedLimit = Math.max(1, Math.min(limit, 50));
+  options: { deadlineAt?: number; reserveMs?: number } = {},
+): Promise<{ claimed: number; completed: number; failed: number; drained: boolean }> {
+  const boundedLimit = Math.max(1, Math.min(limit, 1000));
+  const deadlineAt = options.deadlineAt ?? Number.POSITIVE_INFINITY;
+  const reserveMs = options.reserveMs ?? 10_000;
   let claimed = 0;
   let completed = 0;
-  for (let index = 0; index < boundedLimit; index += 1) {
+  let drained = false;
+  while (claimed < boundedLimit && Date.now() + reserveMs <= deadlineAt) {
     const job = await claimDeletionJob();
-    if (!job) break;
+    if (!job) {
+      drained = true;
+      break;
+    }
     claimed += 1;
     if (await executeDeletionJob(job)) completed += 1;
   }
-  return { claimed, completed, failed: claimed - completed };
+  return { claimed, completed, failed: claimed - completed, drained };
 }

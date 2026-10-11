@@ -168,12 +168,22 @@ export async function captureReferralEvent(event: Stripe.Event) {
 export function referralCredit(interval: string, monthly: number, annual: number) {
   return interval === 'year' ? Math.round((annual * 30) / 365) : monthly;
 }
-export async function runReferralRewards(limit = 10) {
-  if (!getEnvironment().PRESSAY_REFERRALS_ENABLED) return { processed: 0 };
+/**
+ * Process due rewards until the queue is empty, `limit` rewards were attempted
+ * or fewer than ten seconds remain before `deadlineAt` (a Stripe credit call
+ * has an 8 s timeout).
+ */
+export async function runReferralRewards(
+  limit = 10,
+  deadlineAt = Date.now() + 35_000,
+): Promise<{ processed: number; attempted: number; drained: boolean }> {
+  if (!getEnvironment().PRESSAY_REFERRALS_ENABLED)
+    return { processed: 0, attempted: 0, drained: true };
   let processed = 0;
-  const deadline = Date.now() + 35000;
-  for (let i = 0; i < Math.min(25, limit); i++) {
-    if (Date.now() > deadline) break;
+  let attempted = 0;
+  let drained = false;
+  for (let i = 0; i < Math.min(1000, limit); i++) {
+    if (Date.now() + 10_000 > deadlineAt) break;
     const rows = await getSql().query(
       `WITH candidate AS (
       SELECT r.id FROM referral_reward r JOIN referral_attribution a ON a.id=r.attribution_id
@@ -185,7 +195,11 @@ export async function runReferralRewards(limit = 10) {
       FROM candidate WHERE r.id=candidate.id RETURNING r.*`,
       [],
     );
-    if (!rows[0]) break;
+    if (!rows[0]) {
+      drained = true;
+      break;
+    }
+    attempted++;
     const r = rows[0];
     try {
       if (!r.kind) {
@@ -271,5 +285,5 @@ export async function runReferralRewards(limit = 10) {
       );
     }
   }
-  return { processed };
+  return { processed, attempted, drained };
 }
