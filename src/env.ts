@@ -33,6 +33,13 @@ const environmentSchema = z
       .default('w9ckUgrcFp7H7wNV'),
     PRESSAY_INTERNAL_JWT_ISSUER: z.url().default('https://press-say.app/internal'),
     PRESSAY_INTERNAL_JWT_SECRET: z.string().min(32).optional(),
+    // Cloud -> web internal calls (identity deletion) are signed with the same
+    // shared secret under this distinct issuer and the pressay-web-internal audience.
+    PRESSAY_CLOUD_INTERNAL_JWT_ISSUER: z
+      .url()
+      .default('https://api.press-say.app/internal'),
+    // Defaults to the origin of PRESSAY_BETTER_AUTH_JWT_ISSUER.
+    PRESSAY_WEB_INTERNAL_ORIGIN: z.url().optional(),
     DEVICE_IDENTIFIER_HMAC_SECRET: z.string().min(32).optional(),
     RATE_LIMIT_HMAC_SECRET: z.string().min(32).optional(),
     PRESSAY_REFERRALS_ENABLED: z

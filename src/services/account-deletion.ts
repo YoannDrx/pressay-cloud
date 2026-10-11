@@ -2,11 +2,14 @@ import { z } from 'zod';
 
 import { getStripe } from '../billing/stripe-client.js';
 import { getSql } from '../db/client.js';
+import { writeLog } from '../lib/logger.js';
+import { deleteWebIdentity, WebIdentityDeletionError } from './web-identity.js';
 
 const deletionJobSchema = z.object({
   account_id: z.uuid(),
   auth_user_id: z.string(),
   stripe_customer_id: z.string().nullable(),
+  apple_subscription_active: z.boolean().default(false),
   attempts: z.coerce.number().int().min(1).max(20),
 });
 
@@ -14,6 +17,7 @@ interface DeletionJob {
   accountId: string;
   authUserId: string;
   stripeCustomerId: string | null;
+  appleSubscriptionActive: boolean;
   attempts: number;
 }
 
@@ -46,6 +50,17 @@ async function claimDeletionJob(): Promise<DeletionJob | undefined> {
       claimed.account_id,
       account.auth_user_id,
       customer.stripe_customer_id,
+      EXISTS (
+        SELECT 1 FROM billing_subscription subscription
+        WHERE subscription.account_id = claimed.account_id
+          AND subscription.provider = 'app_store'
+          AND subscription.apple_environment = 'Production'
+          AND subscription.status IN ('trialing', 'active', 'grace', 'past_due')
+          AND (
+            subscription.current_period_ends_at > now()
+            OR subscription.cancel_at_period_end = false
+          )
+      ) AS apple_subscription_active,
       claimed.attempts
     FROM claimed
     JOIN pressay_account account ON account.id = claimed.account_id
@@ -58,6 +73,7 @@ async function claimDeletionJob(): Promise<DeletionJob | undefined> {
     accountId: row.data.account_id,
     authUserId: row.data.auth_user_id,
     stripeCustomerId: row.data.stripe_customer_id,
+    appleSubscriptionActive: row.data.apple_subscription_active,
     attempts: row.data.attempts,
   };
 }
@@ -94,6 +110,29 @@ async function executeDeletionJob(job: DeletionJob): Promise<boolean> {
         return false;
       }
     }
+  }
+
+  // Apple cannot be cancelled server-side: the user acknowledged on DELETE /me
+  // that the App Store keeps billing until they cancel in their Apple settings.
+  // Count it (no identifiers) so support can reconcile refund requests.
+  if (job.appleSubscriptionActive) {
+    writeLog('warn', 'account_deletion.apple_subscription_active', {
+      outcome: 'deleted_with_acknowledgement',
+    });
+  }
+
+  // Delete the web identity before the local tombstone completes, so a
+  // transient web failure keeps the job retryable through the usual backoff.
+  try {
+    await deleteWebIdentity(job.authUserId);
+  } catch (error) {
+    await failDeletionJob(
+      job,
+      error instanceof WebIdentityDeletionError
+        ? error.code
+        : 'web_identity_deletion_failed',
+    );
+    return false;
   }
 
   try {

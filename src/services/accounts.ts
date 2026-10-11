@@ -329,7 +329,52 @@ export async function getUsage(authUserId: string): Promise<UsageSnapshot> {
   });
 }
 
-export async function requestAccountDeletion(authUserId: string): Promise<void> {
+export const APPLE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions';
+
+/**
+ * Whether the account has an App Store subscription Apple may still bill:
+ * active, in billing retry or grace, or still set to auto-renew. Sandbox
+ * purchases count too, so App Review sees the same warning as customers.
+ */
+export async function hasActiveAppleSubscription(authUserId: string): Promise<boolean> {
+  const rows = await getSql().query(
+    `SELECT EXISTS (
+      SELECT 1
+      FROM pressay_account account
+      JOIN billing_subscription subscription ON subscription.account_id = account.id
+      WHERE account.auth_user_id = $1
+        AND account.status <> 'deleted'
+        AND subscription.provider = 'app_store'
+        AND subscription.status IN ('trialing', 'active', 'grace', 'past_due')
+        AND (
+          subscription.current_period_ends_at > now()
+          OR subscription.cancel_at_period_end = false
+        )
+    ) AS active`,
+    [authUserId],
+  );
+  return rows[0]?.active === true;
+}
+
+export async function requestAccountDeletion(
+  authUserId: string,
+  options: { acknowledgeAppleSubscription?: boolean } = {},
+): Promise<void> {
+  if (
+    !options.acknowledgeAppleSubscription &&
+    (await hasActiveAppleSubscription(authUserId))
+  ) {
+    throw new ApiError(
+      409,
+      'apple_subscription_active',
+      'An App Store subscription is still active. Cancel it in your Apple account settings, or confirm the deletion anyway.',
+      {},
+      {
+        manageSubscriptionsUrl: APPLE_SUBSCRIPTIONS_URL,
+        acknowledgeParameter: 'acknowledgeAppleSubscription',
+      },
+    );
+  }
   try {
     await getSql().query('SELECT request_pressay_account_deletion($1)', [authUserId]);
   } catch (error) {

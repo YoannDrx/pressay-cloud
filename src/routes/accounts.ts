@@ -75,7 +75,10 @@ accountRoutes.get('/me', async (context) => {
 });
 
 accountRoutes.delete('/me', async (context) => {
-  await requestAccountDeletion(context.get('authUserId'));
+  await requestAccountDeletion(context.get('authUserId'), {
+    acknowledgeAppleSubscription:
+      context.req.query('acknowledgeAppleSubscription') === 'true',
+  });
   return context.body(null, 202);
 });
 
