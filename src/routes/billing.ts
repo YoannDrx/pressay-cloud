@@ -10,6 +10,7 @@ import {
 import { requireAuthentication } from '../lib/auth-middleware.js';
 import { ApiError } from '../lib/errors.js';
 import { writeLog } from '../lib/logger.js';
+import { rateLimit } from '../lib/rate-limit.js';
 import {
   createBillingPortal,
   createCheckout,
@@ -28,6 +29,7 @@ billingRoutes.use('/billing/*', requireAuthentication);
 
 billingRoutes.post(
   '/billing/checkout',
+  rateLimit('billing_checkout', 10),
   zValidator('json', checkoutRequestSchema, (result) => {
     if (!result.success)
       throw new ApiError(422, 'invalid_request', 'Invalid billing request');
@@ -57,14 +59,18 @@ billingRoutes.post(
   },
 );
 
-billingRoutes.post('/billing/portal', async (context) => {
-  return context.json(
-    billingRedirectSchema.parse({
-      url: await createBillingPortal(context.get('authUserId')),
-    }),
-    201,
-  );
-});
+billingRoutes.post(
+  '/billing/portal',
+  rateLimit('billing_portal', 10),
+  async (context) => {
+    return context.json(
+      billingRedirectSchema.parse({
+        url: await createBillingPortal(context.get('authUserId')),
+      }),
+      201,
+    );
+  },
+);
 
 billingRoutes.get('/billing/status', async (context) => {
   return context.json(await getBillingStatus(context.get('authUserId')));
@@ -72,6 +78,7 @@ billingRoutes.get('/billing/status', async (context) => {
 
 billingRoutes.post(
   '/billing/restore-app-store',
+  rateLimit('apple_restore', 10),
   zValidator('json', restoreAppStoreRequestSchema, (result) => {
     if (!result.success) {
       throw new ApiError(422, 'invalid_request', 'Invalid App Store restore request');
@@ -86,12 +93,14 @@ billingRoutes.post(
         'A valid idempotency key is required',
       );
     }
+    const body = context.req.valid('json');
     return context.json(
       restoreAppStoreResponseSchema.parse(
         await restoreAppStorePurchase(
           context.get('authUserId'),
-          context.req.valid('json').signedTransaction,
+          body.signedTransaction,
           idempotencyKey,
+          { linkToCurrentAccount: body.linkToCurrentAccount === true },
         ),
       ),
     );
@@ -128,9 +137,18 @@ billingRoutes.post('/webhooks/apple', async (context) => {
     throw new ApiError(422, 'webhook_too_large', 'Webhook payload is too large');
   }
   const result = await processAppleWebhook(rawBody);
+  const status = result.duplicateOrIgnored ? 'ignored' : 'applied';
   writeLog('info', 'billing.webhook.completed', {
-    outcome: result.duplicateOrIgnored ? 'ignored' : 'applied',
+    outcome: status,
     provider: 'apple',
+    ...(result.code ? { code: result.code } : {}),
   });
-  return context.json({ received: true });
+  // Always 200 for a verified notification: Apple retries non-2xx responses for
+  // days, and an event we cannot attach (for example no appAccountToken) will
+  // never become attachable by retrying. It is recorded as `ignored` instead.
+  return context.json({
+    received: true,
+    status,
+    ...(result.code ? { code: result.code } : {}),
+  });
 });

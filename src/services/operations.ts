@@ -26,9 +26,17 @@ export async function audit(
     [actor, action, target, reason, requestId, result],
   );
 }
+/**
+ * The operations owner is a singleton. A verified login whose email is listed
+ * in PRESSAY_OPERATIONS_OWNER_EMAILS claims it once; afterwards only the
+ * recorded account is the owner, whatever the env list says.
+ */
 export async function ownerAccount(userId: string, email: string, verified: boolean) {
   const id = await accountId(userId);
-  if (verified && email.toLowerCase() === 'yoann.andrieux@gmail.com') {
+  if (
+    verified &&
+    getEnvironment().PRESSAY_OPERATIONS_OWNER_EMAILS.includes(email.toLowerCase())
+  ) {
     await getSql().query(
       `INSERT INTO operations_owner(singleton,account_id) VALUES(true,$1) ON CONFLICT DO NOTHING`,
       [id],

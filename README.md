@@ -40,7 +40,7 @@ provider's still-current entitlement.
 - Node.js 22
 - Hono on Vercel Functions
 - Neon Postgres in the EU
-- Better Auth
+- jose bearer verification against the web OAuth 2.1 issuer (no Cloud-side auth server)
 - Apple App Store Server Library
 - Zod contracts
 - Vitest
@@ -104,11 +104,14 @@ bun run db:check
 bun run billing:configure:app-store
 ```
 
-GitHub-hosted Actions are intentionally not required: this private repository is
-operated without a paid GitHub plan, and the account currently cannot allocate a
-hosted runner. GitGuardian still scans pull requests; source gates run locally
-and deployment gates run in Vercel. A self-hosted or hosted workflow can be added
-later without changing the verification commands.
+`.github/workflows/ci.yml` runs the same gates on every pull request and push to
+`main`: frozen install with bun 1.2.19 on Node 22, typecheck, lint, format
+check, the unit tests, the PostgreSQL tests against a throwaway `postgres:16`
+service, two migration runs plus `db:check`, the secret scan and the dependency
+audit. It never receives Neon, Stripe, Apple or Vercel credentials. The account
+must be able to allocate a runner (GitHub-hosted minutes or a self-hosted
+runner); make the `Verify` job a required status check on `main`. GitGuardian
+still scans pull requests, and deployment gates still run in Vercel.
 
 ## Security invariants
 

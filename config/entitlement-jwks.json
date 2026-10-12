@@ -7,6 +7,14 @@
       "kid": "pressay-entitlement-2026-01",
       "alg": "EdDSA",
       "use": "sig"
+    },
+    {
+      "crv": "Ed25519",
+      "x": "Xm5Rqwpjhv85nc7Y_Lrf3S7M40iCozJCrFh1UCXeoF0",
+      "kty": "OKP",
+      "kid": "pressay-entitlement-production-2026-01",
+      "alg": "EdDSA",
+      "use": "sig"
     }
   ]
 }

@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const query = vi.hoisted(() => vi.fn());
 const createCustomer = vi.hoisted(() => vi.fn());
 const createCheckoutSession = vi.hoisted(() => vi.fn());
+const updateCustomer = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/db/client.ts', () => ({
   getSql: () => ({ query }),
 }));
 vi.mock('../src/billing/stripe-client.ts', () => ({
   getStripe: () => ({
-    customers: { create: createCustomer },
+    customers: { create: createCustomer, update: updateCustomer },
     checkout: { sessions: { create: createCheckoutSession } },
   }),
 }));
@@ -22,8 +23,12 @@ describe('Stripe Checkout', () => {
     query.mockReset();
     createCustomer.mockReset();
     createCheckoutSession.mockReset();
+    updateCustomer.mockReset();
+    delete process.env.STRIPE_AUTOMATIC_TAX_ENABLED;
+    delete process.env.STRIPE_TAX_ID_COLLECTION_ENABLED;
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
+    process.env.ENTITLEMENT_SIGNING_KEY_ID = 'pressay-entitlement-production-2026-01';
     process.env.STRIPE_COMMERCIAL_LAUNCH_ENABLED = 'true';
     process.env.STRIPE_SECRET_KEY = 'rk_live_placeholder';
     process.env.STRIPE_EXPECTED_ACCOUNT_ID = 'acct_pressay';
@@ -108,6 +113,101 @@ describe('Stripe Checkout', () => {
         true,
       ],
     );
+  });
+
+  it.each([
+    [{ stripe_subscription_active: true }, 'subscription_already_active'],
+    [{ apple_subscription_active: true }, 'apple_subscription_active'],
+  ])('refuses a second subscription (%j)', async (flags, code) => {
+    query.mockResolvedValueOnce([
+      {
+        account_id: '00000000-0000-4000-8000-000000000001',
+        stripe_customer_id: 'cus_pressay',
+        provider_price_id: 'price_server_owned',
+        ...flags,
+      },
+    ]);
+    await expect(
+      createCheckout(
+        'auth-user',
+        'person@example.com',
+        'year',
+        'checkout-idempotency-key',
+        '2026-08-10',
+        true,
+      ),
+    ).rejects.toMatchObject({ status: 409, code });
+    expect(query).toHaveBeenCalledOnce();
+    expect(query.mock.calls[0]?.[0]).toContain("apple_environment = 'Production'");
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+    expect(createCustomer).not.toHaveBeenCalled();
+  });
+
+  it('enables Stripe Tax and address collection behind the release flag', async () => {
+    process.env.STRIPE_AUTOMATIC_TAX_ENABLED = 'true';
+    process.env.STRIPE_TAX_ID_COLLECTION_ENABLED = 'true';
+    clearEnvironmentCacheForTests();
+    query
+      .mockResolvedValueOnce([
+        {
+          account_id: '00000000-0000-4000-8000-000000000001',
+          stripe_customer_id: 'cus_existing',
+          provider_price_id: 'price_server_owned',
+          stripe_subscription_active: false,
+          apple_subscription_active: false,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    updateCustomer.mockResolvedValueOnce({ id: 'cus_existing' });
+    createCheckoutSession.mockResolvedValueOnce({
+      url: 'https://checkout.stripe.com/c/pay/test',
+    });
+
+    await createCheckout(
+      'auth-user',
+      'person@example.com',
+      'month',
+      'checkout-idempotency-key',
+      '2026-08-10',
+      true,
+    );
+
+    expect(updateCustomer).toHaveBeenCalledWith('cus_existing', {
+      email: 'person@example.com',
+    });
+    expect(createCheckoutSession.mock.calls[0]?.[0]).toMatchObject({
+      customer: 'cus_existing',
+      automatic_tax: { enabled: true },
+      billing_address_collection: 'required',
+      customer_update: { address: 'auto', name: 'auto' },
+      tax_id_collection: { enabled: true },
+    });
+  });
+
+  it('keeps Checkout tax-neutral while Stripe Tax is not configured', async () => {
+    query
+      .mockResolvedValueOnce([
+        {
+          account_id: '00000000-0000-4000-8000-000000000001',
+          stripe_customer_id: 'cus_existing',
+          provider_price_id: 'price_server_owned',
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    createCheckoutSession.mockResolvedValueOnce({
+      url: 'https://checkout.stripe.com/c/pay/test',
+    });
+    await createCheckout(
+      'auth-user',
+      'person@example.com',
+      'month',
+      'checkout-idempotency-key',
+      '2026-08-10',
+      true,
+    );
+    const params = createCheckoutSession.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(params).not.toHaveProperty('automatic_tax');
+    expect(params).not.toHaveProperty('customer_update');
   });
 
   it('returns a server-authoritative subscription summary', async () => {

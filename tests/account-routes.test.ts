@@ -1,18 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SignJWT } from 'jose';
 
-const getSession = vi.hoisted(() => vi.fn());
 const bootstrapAccount = vi.hoisted(() => vi.fn());
 const bootstrapWebAccount = vi.hoisted(() => vi.fn());
-
-vi.mock('../src/auth.ts', () => ({
-  getAuth: () => ({
-    api: {
-      getSession,
-      revokeSessions: vi.fn(() => Promise.resolve()),
-    },
-  }),
-}));
+const requestAccountDeletion = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/services/accounts.ts', () => ({
   bootstrapAccount,
@@ -21,47 +11,31 @@ vi.mock('../src/services/accounts.ts', () => ({
   getMe: vi.fn(),
   getUsage: vi.fn(),
   listDevices: vi.fn(),
-  requestAccountDeletion: vi.fn(),
+  requestAccountDeletion,
   revokeDevice: vi.fn(),
 }));
 
 import app from '../src/app.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
+import { bearer, configureTestIdentity, webProxyToken } from './helpers/identity.ts';
 
 describe('account routes', () => {
   beforeEach(() => {
-    getSession.mockReset();
     bootstrapAccount.mockReset();
     bootstrapWebAccount.mockReset();
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
-    process.env.PRESSAY_INTERNAL_JWT_ISSUER = 'https://press-say.app/internal';
-    process.env.PRESSAY_INTERNAL_JWT_SECRET =
-      'test-internal-secret-that-is-at-least-32-characters';
     clearEnvironmentCacheForTests();
+    configureTestIdentity();
   });
 
   it('rejects an unauthenticated account request', async () => {
-    getSession.mockResolvedValueOnce(null);
     const response = await app.request('/v1/me');
     expect(response.status).toBe(401);
+    expect(response.headers.get('www-authenticate')).toBe('Bearer realm="pressay-api"');
   });
 
   it('accepts the short-lived signed web proxy identity', async () => {
-    getSession.mockResolvedValueOnce(null);
-    const token = await new SignJWT({
-      email: 'person@example.com',
-      email_verified: true,
-      token_use: 'pressay_web_proxy',
-    })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setSubject('web-auth-user')
-      .setIssuer('https://press-say.app/internal')
-      .setAudience('pressay-api')
-      .setIssuedAt()
-      .setExpirationTime('2m')
-      .sign(
-        new TextEncoder().encode('test-internal-secret-that-is-at-least-32-characters'),
-      );
+    const token = await webProxyToken('web-auth-user');
     const response = await app.request('/v1/accounts/bootstrap', {
       method: 'POST',
       headers: {
@@ -74,13 +48,9 @@ describe('account routes', () => {
   });
 
   it('rejects an invalid bootstrap body before calling the service', async () => {
-    getSession.mockResolvedValueOnce({
-      user: { id: 'auth-user', email: 'person@example.com' },
-      session: { id: 'session' },
-    });
     const response = await app.request('/v1/accounts/bootstrap', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { ...(await bearer()), 'content-type': 'application/json' },
       body: JSON.stringify({ deviceIdentifier: 'too-short' }),
     });
     expect(response.status).toBe(422);
@@ -88,10 +58,6 @@ describe('account routes', () => {
   });
 
   it('returns the idempotent bootstrap contract', async () => {
-    getSession.mockResolvedValueOnce({
-      user: { id: 'auth-user', email: 'person@example.com' },
-      session: { id: 'session' },
-    });
     bootstrapAccount.mockResolvedValueOnce({
       accountId: '00000000-0000-4000-8000-000000000001',
       created: false,
@@ -108,7 +74,7 @@ describe('account routes', () => {
 
     const response = await app.request('/v1/accounts/bootstrap', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { ...(await bearer()), 'content-type': 'application/json' },
       body: JSON.stringify({
         deviceIdentifier: 'pressay-device:stable-id',
         displayName: 'MacBook Air',
@@ -125,10 +91,6 @@ describe('account routes', () => {
   });
 
   it('bootstraps a Free web account without a device payload', async () => {
-    getSession.mockResolvedValueOnce({
-      user: { id: 'auth-user', email: 'person@example.com' },
-      session: { id: 'session' },
-    });
     bootstrapWebAccount.mockResolvedValueOnce({
       accountId: '00000000-0000-4000-8000-000000000001',
       created: true,
@@ -144,6 +106,7 @@ describe('account routes', () => {
 
     const response = await app.request('/v1/accounts/web-bootstrap', {
       method: 'POST',
+      headers: await bearer(),
     });
 
     expect(response.status).toBe(200);
@@ -152,5 +115,50 @@ describe('account routes', () => {
       entitlement: { tier: 'free', source: 'none' },
     });
     expect(bootstrapWebAccount).toHaveBeenCalledWith('auth-user');
+  });
+
+  it('forwards an explicit App Store acknowledgement on account deletion', async () => {
+    requestAccountDeletion.mockResolvedValue(undefined);
+    const plain = await app.request('/v1/me', {
+      method: 'DELETE',
+      headers: await bearer(),
+    });
+    expect(plain.status).toBe(202);
+    expect(requestAccountDeletion).toHaveBeenLastCalledWith('auth-user', {
+      acknowledgeAppleSubscription: false,
+    });
+    await app.request('/v1/me?acknowledgeAppleSubscription=true', {
+      method: 'DELETE',
+      headers: await bearer(),
+    });
+    expect(requestAccountDeletion).toHaveBeenLastCalledWith('auth-user', {
+      acknowledgeAppleSubscription: true,
+    });
+  });
+
+  it('returns the App Store conflict envelope with the subscriptions link', async () => {
+    const { ApiError } = await import('../src/lib/errors.ts');
+    requestAccountDeletion.mockRejectedValue(
+      new ApiError(
+        409,
+        'apple_subscription_active',
+        'Cancel first',
+        {},
+        {
+          manageSubscriptionsUrl: 'https://apps.apple.com/account/subscriptions',
+        },
+      ),
+    );
+    const response = await app.request('/v1/me', {
+      method: 'DELETE',
+      headers: await bearer(),
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: 'apple_subscription_active',
+        manageSubscriptionsUrl: 'https://apps.apple.com/account/subscriptions',
+      },
+    });
   });
 });

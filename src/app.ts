@@ -1,9 +1,11 @@
 import { operationsRoutes } from './routes/operations.js';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { matchedRoutes } from 'hono/route';
 import { secureHeaders } from 'hono/secure-headers';
 
-import { publicApiError } from './lib/errors.js';
+import { parseAllowedOrigins } from './env.js';
+import { errorCauseChain, publicApiError, stableErrorCode } from './lib/errors.js';
 import { writeLog } from './lib/logger.js';
 import { requestId } from './lib/request-id.js';
 import { healthRoutes } from './routes/health.js';
@@ -14,25 +16,41 @@ import { cloudRoutes } from './routes/cloud.js';
 import { desktopAuthRoutes } from './routes/desktop-auth.js';
 import { syncRoutes } from './routes/sync.js';
 import type { AppEnvironment } from './types.js';
-import { getAuth } from './auth.js';
-import { restoreAppleCallbackStateCookie } from './auth/apple-callback.js';
 
 const app = new Hono<AppEnvironment>();
 
 app.use('*', secureHeaders());
 app.use('*', requestId);
+let originCache: { raw: string; origins: ReadonlySet<string> } | undefined;
+
+/**
+ * Read the allowlist without requiring the full environment (health checks
+ * must answer even when the database URL is missing). Invalid entries are
+ * dropped here; getEnvironment() rejects them at the first real request.
+ */
+function allowedOrigins(): ReadonlySet<string> {
+  const raw = process.env.PRESSAY_ALLOWED_ORIGINS ?? 'http://localhost:1420';
+  if (originCache?.raw !== raw) {
+    const origins = new Set<string>();
+    for (const entry of raw.split(',')) {
+      try {
+        for (const origin of parseAllowedOrigins(entry)) origins.add(origin);
+      } catch {
+        // Ignored: not a URL.
+      }
+    }
+    originCache = { raw, origins };
+  }
+  return originCache.origins;
+}
+
 app.use(
   '/v1/*',
   cors({
-    origin: (origin) => {
-      const allowed = (process.env.PRESSAY_ALLOWED_ORIGINS ?? 'http://localhost:1420')
-        .split(',')
-        .map((value) => value.trim());
-      return allowed.includes(origin) ? origin : null;
-    },
+    origin: (origin) => (allowedOrigins().has(origin) ? origin : null),
     allowHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Device-Id'],
-    exposeHeaders: ['Content-Length', 'X-Request-Id'],
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    exposeHeaders: ['Content-Length', 'X-Request-Id', 'Retry-After'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     maxAge: 600,
   }),
@@ -46,13 +64,6 @@ app.route('/v1', billingRoutes);
 app.route('/v1', cloudRoutes);
 app.route('/v1', desktopAuthRoutes);
 app.route('/v1', syncRoutes);
-app.on(['GET', 'POST'], '/v1/auth/*', async (context) => {
-  const request =
-    context.req.path === '/v1/auth/callback/apple'
-      ? await restoreAppleCallbackStateCookie(context.req.raw)
-      : context.req.raw;
-  return getAuth().handler(request);
-});
 
 app.notFound((context) =>
   context.json(
@@ -70,17 +81,37 @@ app.onError((error, context) => {
   const status = apiError?.status ?? 500;
   const code = apiError?.code ?? 'internal_error';
 
-  writeLog('error', 'request.failed', {
+  // Names and stable codes only: provider and database messages can carry
+  // customer data or credentials. The route is the registered pattern, never
+  // the raw path, so identifiers in URLs stay out of the logs.
+  let route = 'unknown';
+  try {
+    // The endpoint is the matched route registered for a concrete method;
+    // `ALL` entries are middleware such as CORS or authentication.
+    route =
+      matchedRoutes(context).findLast((candidate) => candidate.method !== 'ALL')
+        ?.path ?? 'unknown';
+  } catch {
+    // No matched route.
+  }
+  writeLog(status >= 500 ? 'error' : 'warn', 'request.failed', {
     code,
+    error_code: stableErrorCode(error),
+    error_name: errorCauseChain(error, 1) || 'unknown',
+    cause_chain: errorCauseChain(error),
     method: context.req.method,
-    path: context.req.path,
+    route,
     request_id: requestId,
     status,
   });
 
+  for (const [name, value] of Object.entries(apiError?.headers ?? {})) {
+    context.header(name, value);
+  }
   return context.json(
     {
       error: {
+        ...(apiError?.details ?? {}),
         code,
         message: apiError?.message ?? 'An unexpected error occurred',
       },

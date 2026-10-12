@@ -1,17 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const getSession = vi.hoisted(() => vi.fn());
 const processCloudTransformation = vi.hoisted(() => vi.fn());
 const processCloudTranscription = vi.hoisted(() => vi.fn());
 const assertCloudProcessingEnabled = vi.hoisted(() => vi.fn());
 const enforceCloudRateLimits = vi.hoisted(() => vi.fn());
 
-vi.mock('../src/auth.ts', () => ({
-  getAuth: () => ({
-    api: { getSession },
-    handler: vi.fn(),
-  }),
-}));
 vi.mock('../src/services/cloud-processing.ts', () => ({
   processCloudTransformation,
   processCloudTranscription,
@@ -23,22 +16,21 @@ vi.mock('../src/services/rate-limits.ts', () => ({
 
 import app from '../src/app.ts';
 import { ApiError } from '../src/lib/errors.ts';
+import { bearer, configureTestIdentity } from './helpers/identity.ts';
 
 const deviceId = '00000000-0000-4000-8000-000000000002';
 
 describe('Cloud routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getSession.mockResolvedValue({
-      user: { id: 'auth-user', email: 'person@example.com' },
-      session: { id: 'session' },
-    });
+    process.env.DATABASE_URL = 'postgresql://example.test/pressay';
+    configureTestIdentity();
   });
 
   it('requires idempotency and explicit content-transfer acknowledgement', async () => {
     const withoutKey = await app.request('/v1/cloud/transformations', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { ...(await bearer()), 'content-type': 'application/json' },
       body: JSON.stringify({
         deviceId,
         transcript: 'source',
@@ -51,6 +43,7 @@ describe('Cloud routes', () => {
     const withoutConsent = await app.request('/v1/cloud/transformations', {
       method: 'POST',
       headers: {
+        ...(await bearer()),
         'content-type': 'application/json',
         'idempotency-key': 'transform-route-key-0001',
       },
@@ -75,7 +68,10 @@ describe('Cloud routes', () => {
     });
     const response = await app.request('/v1/cloud/transcriptions', {
       method: 'POST',
-      headers: { 'idempotency-key': 'transcribe-route-key-kill-switch' },
+      headers: {
+        ...(await bearer()),
+        'idempotency-key': 'transcribe-route-key-kill-switch',
+      },
       body: 'not-even-parsed',
     });
     expect(response.status).toBe(503);
@@ -95,6 +91,7 @@ describe('Cloud routes', () => {
     const response = await app.request('/v1/cloud/transformations', {
       method: 'POST',
       headers: {
+        ...(await bearer()),
         'content-type': 'application/json',
         'idempotency-key': 'transform-route-key-0002',
         'x-vercel-forwarded-for': '203.0.113.20',
@@ -128,7 +125,7 @@ describe('Cloud routes', () => {
     );
     const response = await app.request('/v1/cloud/transcriptions', {
       method: 'POST',
-      headers: { 'idempotency-key': 'transcribe-route-key-0001' },
+      headers: { ...(await bearer()), 'idempotency-key': 'transcribe-route-key-0001' },
       body: form,
     });
     expect(response.status).toBe(422);

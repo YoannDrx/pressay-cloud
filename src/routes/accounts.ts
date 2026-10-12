@@ -9,9 +9,9 @@ import {
   deviceListResponseSchema,
   entitlementResponseSchema,
 } from '../contracts/account.js';
-import { getAuth } from '../auth.js';
 import { requireAuthentication } from '../lib/auth-middleware.js';
 import { ApiError } from '../lib/errors.js';
+import { rateLimit } from '../lib/rate-limit.js';
 import {
   assertActiveDevice,
   bootstrapAccount,
@@ -27,12 +27,14 @@ import {
   getEntitlementPublicJwk,
   signEntitlementSnapshot,
 } from '../services/entitlements.js';
+import { exportAccountData } from '../services/data-export.js';
 import type { AppEnvironment } from '../types.js';
 
 export const accountRoutes = new Hono<AppEnvironment>();
 
 accountRoutes.use('/accounts/*', requireAuthentication);
 accountRoutes.use('/me', requireAuthentication);
+accountRoutes.use('/me/*', requireAuthentication);
 accountRoutes.use('/devices', requireAuthentication);
 accountRoutes.use('/devices/*', requireAuthentication);
 accountRoutes.use('/entitlements', requireAuthentication);
@@ -75,12 +77,22 @@ accountRoutes.get('/me', async (context) => {
   return context.json(await getMe(context.get('authUserId'), context.get('authEmail')));
 });
 
-accountRoutes.delete('/me', async (context) => {
-  await requestAccountDeletion(context.get('authUserId'));
-  if (await getAuth().api.getSession({ headers: context.req.raw.headers })) {
-    await getAuth().api.revokeSessions({ headers: context.req.raw.headers });
-  }
+accountRoutes.delete('/me', rateLimit('account_deletion', 5), async (context) => {
+  await requestAccountDeletion(context.get('authUserId'), {
+    acknowledgeAppleSubscription:
+      context.req.query('acknowledgeAppleSubscription') === 'true',
+  });
   return context.body(null, 202);
+});
+
+accountRoutes.get('/me/export', rateLimit('account_export', 5), async (context) => {
+  const data = await exportAccountData(context.get('authUserId'));
+  context.header('Cache-Control', 'private, no-store');
+  context.header(
+    'Content-Disposition',
+    'attachment; filename="pressay-cloud-export.json"',
+  );
+  return context.json(data);
 });
 
 accountRoutes.get('/devices', async (context) => {

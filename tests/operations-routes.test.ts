@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignJWT } from 'jose';
-const getSession = vi.hoisted(() => vi.fn());
 const ownerAccount = vi.hoisted(() => vi.fn());
 const createCampaign = vi.hoisted(() => vi.fn());
 const consume = vi.hoisted(() => vi.fn());
+const audit = vi.hoisted(() => vi.fn());
 const query = vi.hoisted(() => vi.fn());
 const retrievePromotion = vi.hoisted(() => vi.fn());
 vi.mock('../src/db/client.ts', () => ({ getSql: () => ({ query }) }));
 vi.mock('../src/billing/stripe-client.ts', () => ({
   getStripe: () => ({ promotionCodes: { retrieve: retrievePromotion } }),
 }));
-vi.mock('../src/auth.ts', () => ({ getAuth: () => ({ api: { getSession } }) }));
 vi.mock('../src/services/accounts.ts', () => ({
   bootstrapWebAccount: vi.fn(),
   recordAccountContact: vi.fn(),
@@ -18,11 +17,13 @@ vi.mock('../src/services/accounts.ts', () => ({
 vi.mock('../src/services/operations.ts', () => ({
   ownerAccount,
   createCampaign,
+  audit,
   accountId: () => Promise.resolve('account'),
 }));
 vi.mock('../src/services/rate-limits.ts', () => ({ consume }));
 import app from '../src/app.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
+import { configureTestJwks, externalAccessToken } from './helpers/identity.ts';
 const secret = 'operations-route-test-secret-minimum-32-characters';
 async function token(claims: Record<string, unknown> = {}) {
   return new SignJWT({
@@ -64,7 +65,6 @@ describe('Cloud administrative authorization', () => {
     process.env.PRESSAY_INTERNAL_JWT_SECRET = secret;
     process.env.PRESSAY_INTERNAL_JWT_ISSUER = 'https://press-say.app/internal';
     clearEnvironmentCacheForTests();
-    getSession.mockResolvedValue(null);
     ownerAccount.mockResolvedValue('aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970');
     createCampaign.mockResolvedValue({ id: 'campaign' });
   });
@@ -72,13 +72,13 @@ describe('Cloud administrative authorization', () => {
     expect((await app.request('/v1/admin/session')).status).toBe(401);
   });
   it('rejects client-selected referral timestamps from a direct authenticated session', async () => {
-    getSession.mockResolvedValue({
-      user: { id: 'user', email: 'user@example.test', emailVerified: true },
-      session: { id: 'session' },
-    });
+    await configureTestJwks();
     const response = await app.request('/v1/referrals/attribute', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        authorization: `Bearer ${await externalAccessToken()}`,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({
         code: 'ABCDEF123456',
         issuedAt: Math.floor(Date.now() / 1000),
@@ -114,6 +114,44 @@ describe('Cloud administrative authorization', () => {
       expect.objectContaining({ durationDays: 30, maxRedemptions: 1 }),
       expect.any(String),
     );
+  });
+  it.each([
+    '/v1/admin/users',
+    '/v1/admin/referrals',
+    '/v1/admin/users/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970',
+  ])('requires a recent second factor to read personal data at %s', async (path) => {
+    const response = await app.request(path, {
+      headers: { authorization: `Bearer ${await token({ pressay_step_up_at: 0 })}` },
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'step_up_required' },
+    });
+    expect(query).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it('audits an administrative read of the user list without storing the search', async () => {
+    query.mockResolvedValue([]);
+    const response = await app.request('/v1/admin/users?search=someone', {
+      headers: { authorization: `Bearer ${await token()}` },
+    });
+    expect(response.status).toBe(200);
+    expect(audit).toHaveBeenCalledWith(
+      'aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970',
+      'admin.users.read',
+      'users',
+      'personal_data_read',
+      expect.any(String),
+    );
+    expect(JSON.stringify(audit.mock.calls)).not.toContain('someone');
+    expect(consume).not.toHaveBeenCalled();
+  });
+  it('keeps aggregate admin reads available without a second factor', async () => {
+    query.mockResolvedValue([]);
+    const response = await app.request('/v1/admin/session', {
+      headers: { authorization: `Bearer ${await token({ pressay_step_up_at: 0 })}` },
+    });
+    expect(response.status).toBe(200);
   });
   it('returns live promotion usage without disclosing the reusable secret', async () => {
     query.mockResolvedValue([{ stripe_promotion_id: 'promo_example' }]);

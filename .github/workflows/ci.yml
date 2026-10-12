@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pressay_ci
+          # Throwaway CI database only reachable from this job.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Local CI database: never a Neon, staging or production URL.
+      CI_DATABASE_URL: postgresql://postgres@localhost:5432/pressay_ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in sync with packageManager and the Vercel build image.
+          bun-version: 1.2.19
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Format
+        run: bun run format:check
+
+      - name: Unit and PostgreSQL tests
+        env:
+          APPLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          OPERATIONS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: bun run test
+
+      - name: Migrations apply twice and match the expected schema
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: |
+          bun run db:migrate
+          bun run db:migrate
+          bun run db:check
+
+      - name: Secret scan
+        run: bun run secrets:check
+
+      - name: Dependency audit
+        run: bun run audit:dependencies

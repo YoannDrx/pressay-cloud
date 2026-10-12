@@ -45,8 +45,10 @@ describe('Stripe catalogue audit', () => {
   beforeEach(() => {
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     process.env.PRESSAY_DEPLOYMENT_ENV = 'development';
+    delete process.env.ENTITLEMENT_SIGNING_KEY_ID;
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.STRIPE_COMMERCIAL_LAUNCH_ENABLED;
+    delete process.env.STRIPE_AUTOMATIC_TAX_ENABLED;
     process.env.STRIPE_EXPECTED_ACCOUNT_ID = account.id;
     process.env.STRIPE_PRODUCT_PRO = product.id;
     process.env.STRIPE_PRICE_PRO_MONTHLY = monthly.id;
@@ -70,6 +72,7 @@ describe('Stripe catalogue audit', () => {
 
   it('rejects a live catalogue in staging', async () => {
     process.env.PRESSAY_DEPLOYMENT_ENV = 'staging';
+    delete process.env.ENTITLEMENT_SIGNING_KEY_ID;
     clearEnvironmentCacheForTests();
     const liveProduct = { ...product, livemode: true };
     const liveClient = {
@@ -91,10 +94,32 @@ describe('Stripe catalogue audit', () => {
 
   it('requires a live catalogue in production', async () => {
     process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
+    process.env.ENTITLEMENT_SIGNING_KEY_ID = 'pressay-entitlement-production-2026-01';
     clearEnvironmentCacheForTests();
 
     await expect(auditStripeCatalogue(client())).rejects.toThrow(
       'active Pressay Pro catalogue entry',
     );
+  });
+
+  it('requires tax-inclusive prices once Stripe Tax is enabled', async () => {
+    process.env.STRIPE_AUTOMATIC_TAX_ENABLED = 'true';
+    clearEnvironmentCacheForTests();
+    await expect(auditStripeCatalogue(client())).rejects.toThrow('tax-inclusive');
+
+    const inclusiveClient = {
+      accounts: { retrieveCurrent: () => Promise.resolve(account) },
+      products: { retrieve: () => Promise.resolve(product) },
+      prices: {
+        retrieve: (id: string) =>
+          Promise.resolve({
+            ...(id === monthly.id ? monthly : annual),
+            tax_behavior: 'inclusive',
+          }),
+      },
+    } as unknown as Parameters<typeof auditStripeCatalogue>[0];
+    await expect(auditStripeCatalogue(inclusiveClient)).resolves.toMatchObject({
+      productId: product.id,
+    });
   });
 });

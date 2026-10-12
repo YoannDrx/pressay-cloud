@@ -1,21 +1,11 @@
 const baseUrl = (
   process.env.PRESSAY_STAGING_BASE_URL ?? 'https://api-staging.press-say.app'
 ).replace(/\/$/, '');
-const expectedCloudAuthProviders = (
-  process.env.PRESSAY_EXPECTED_CLOUD_AUTH_PROVIDERS ??
-  process.env.PRESSAY_EXPECTED_AUTH_PROVIDERS ??
-  'google,apple'
-)
-  .split(',')
-  .map((provider) => provider.trim())
-  .filter(Boolean);
-const expectedAuthCallbackUrl =
-  process.env.PRESSAY_EXPECTED_AUTH_CALLBACK_URL ??
-  `${baseUrl}/v1/desktop-auth/callback`;
 const deploymentToken = process.env.PRESSAY_STAGING_AUTOMATION_BYPASS_SECRET;
 const oauthIssuer = (
   process.env.PRESSAY_OAUTH_ISSUER ?? 'https://press-say.app'
 ).replace(/\/$/, '');
+const expectedAuthProviders = ['apple', 'google'];
 const production = baseUrl === 'https://api.press-say.app';
 const expectedEntitlementKeyId =
   process.env.PRESSAY_EXPECTED_ENTITLEMENT_KEY_ID ??
@@ -48,7 +38,7 @@ const checks: Check[] = [
     validate: (body) => (body as { status?: string }).status === 'ready',
   },
   {
-    name: 'desktop auth configuration',
+    name: 'desktop auth configuration advertises the single web issuer',
     url: `${baseUrl}/v1/desktop-auth/config`,
     expected: [200],
     validate: (body) => {
@@ -56,24 +46,26 @@ const checks: Check[] = [
         magicLink?: unknown;
         providers?: unknown;
         callbackUrl?: unknown;
+        flow?: unknown;
+        issuer?: unknown;
       };
       return (
-        typeof config.magicLink === 'boolean' &&
+        config.magicLink === false &&
         Array.isArray(config.providers) &&
-        typeof config.callbackUrl === 'string' &&
-        config.callbackUrl === expectedAuthCallbackUrl
+        expectedAuthProviders.every((provider) =>
+          (config.providers as unknown[]).includes(provider),
+        ) &&
+        config.callbackUrl === 'pressay://oauth/callback' &&
+        config.flow === 'web_oauth_pkce' &&
+        config.issuer === oauthIssuer
       );
     },
   },
-  ...expectedCloudAuthProviders.map((provider): Check => ({
-    name: `Cloud-native auth provider: ${provider}`,
-    url: `${baseUrl}/v1/desktop-auth/config`,
-    expected: [200],
-    validate: (body) => {
-      const providers = (body as { providers?: unknown }).providers;
-      return Array.isArray(providers) && providers.includes(provider);
-    },
-  })),
+  {
+    name: 'Cloud-hosted sign-in is retired',
+    url: `${baseUrl}/v1/desktop-auth/social/apple?state=${'a'.repeat(43)}`,
+    expected: [410],
+  },
   {
     name: 'OAuth 2.1 PKCE issuer',
     url: `${oauthIssuer}/.well-known/oauth-authorization-server`,

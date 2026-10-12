@@ -12,15 +12,34 @@ const environmentSchema = z
     DATABASE_URL_UNPOOLED: z.url().startsWith('postgresql://').optional(),
     PRESSAY_ALLOWED_ORIGINS: z.string().default('http://localhost:1420'),
     PRESSAY_API_URL: z.url().default('http://localhost:3000'),
-    BETTER_AUTH_SECRET: z.string().min(32).optional(),
     PRESSAY_BETTER_AUTH_JWT_ISSUER: z.url().optional(),
     PRESSAY_BETTER_AUTH_JWT_AUDIENCE: z
       .string()
       .min(1)
       .default('https://api.press-say.app'),
     PRESSAY_BETTER_AUTH_JWKS_URL: z.url().optional(),
+    // Dedicated audience for the web server-side proxy (step-up capable tokens).
+    PRESSAY_WEB_PROXY_JWT_AUDIENCE: z.string().min(1).default('pressay-web-proxy'),
+    // Rollout switch: accept proxy tokens minted with the API audience until the
+    // web app emits the dedicated proxy audience, then set to false.
+    PRESSAY_WEB_PROXY_LEGACY_AUDIENCE_ALLOWED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((value) => value === 'true'),
+    // Public OAuth client of the macOS app at the web issuer (advertised only).
+    PRESSAY_DESKTOP_OAUTH_CLIENT_ID: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{1,128}$/)
+      .default('w9ckUgrcFp7H7wNV'),
     PRESSAY_INTERNAL_JWT_ISSUER: z.url().default('https://press-say.app/internal'),
     PRESSAY_INTERNAL_JWT_SECRET: z.string().min(32).optional(),
+    // Cloud -> web internal calls (identity deletion) are signed with the same
+    // shared secret under this distinct issuer and the pressay-web-internal audience.
+    PRESSAY_CLOUD_INTERNAL_JWT_ISSUER: z
+      .url()
+      .default('https://api.press-say.app/internal'),
+    // Defaults to the origin of PRESSAY_BETTER_AUTH_JWT_ISSUER.
+    PRESSAY_WEB_INTERNAL_ORIGIN: z.url().optional(),
     DEVICE_IDENTIFIER_HMAC_SECRET: z.string().min(32).optional(),
     RATE_LIMIT_HMAC_SECRET: z.string().min(32).optional(),
     PRESSAY_REFERRALS_ENABLED: z
@@ -56,15 +75,56 @@ const environmentSchema = z
       .string()
       .regex(/^[A-Za-z0-9._-]{1,80}$/)
       .default('pressay-entitlement-development'),
-    RESEND_API_KEY: z.string().startsWith('re_').optional(),
-    PRESSAY_AUTH_FROM_EMAIL: z.string().default('Pressay <account@press-say.app>'),
-    GOOGLE_CLIENT_ID: z.string().min(1).optional(),
-    GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
-    APPLE_CLIENT_ID: z.string().min(1).optional(),
-    APPLE_TEAM_ID: z.string().min(1).optional(),
-    APPLE_KEY_ID: z.string().min(1).optional(),
-    APPLE_PRIVATE_KEY: z.string().min(1).optional(),
     APPLE_APP_BUNDLE_IDENTIFIER: z.string().min(1).optional(),
+    // Verified emails allowed to claim the operations owner seat (comma-separated).
+    PRESSAY_OPERATIONS_OWNER_EMAILS: z
+      .string()
+      .default('')
+      .transform((value) =>
+        value
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.email())),
+    // Retention of operational records (see docs/ARCHITECTURE.md).
+    PRESSAY_RETENTION_IDEMPOTENCY_DAYS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(3650)
+      .default(30),
+    PRESSAY_RETENTION_USAGE_RESERVATION_DAYS: z.coerce
+      .number()
+      .int()
+      .min(31)
+      .max(3650)
+      .default(395),
+    PRESSAY_RETENTION_PROVIDER_EVENT_DAYS: z.coerce
+      .number()
+      .int()
+      .min(90)
+      .max(3650)
+      .default(400),
+    // App Review and TestFlight purchase in the Apple Sandbox against the
+    // production API, so production keeps verifying Sandbox payloads. Sandbox
+    // access is capped (see APPLE_SANDBOX_MAX_GRANT_HOURS) and can be limited
+    // to review accounts or switched off outside review windows.
+    APPLE_SANDBOX_IN_PRODUCTION_ENABLED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((value) => value === 'true'),
+    APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS: z
+      .string()
+      .default('')
+      .transform((value) =>
+        value
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.uuid())),
+    APPLE_SANDBOX_MAX_GRANT_HOURS: z.coerce.number().int().min(1).max(720).default(24),
     APP_STORE_ISSUER_ID: z.uuid().optional(),
     APP_STORE_KEY_ID: z.string().min(1).max(64).optional(),
     APP_STORE_PRIVATE_KEY_BASE64: z.string().min(1).optional(),
@@ -105,6 +165,23 @@ const environmentSchema = z
       .default('eur'),
     PRESSAY_PRO_MONTHLY_AMOUNT_MINOR: z.coerce.number().int().positive().default(799),
     PRESSAY_PRO_ANNUAL_AMOUNT_MINOR: z.coerce.number().int().positive().default(6900),
+    // Stripe Tax in Checkout. Keep false until Stripe Tax is activated, the
+    // tax registrations exist and the prices are tax-inclusive.
+    STRIPE_AUTOMATIC_TAX_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    STRIPE_TAX_ID_COLLECTION_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
+    // Stripe product tax code applied by billing:provision when tax is enabled.
+    STRIPE_PRODUCT_TAX_CODE: z
+      .string()
+      .regex(/^txcd_\d{8}$/)
+      .default('txcd_10103000'),
+    // Pro stays available this many days after a renewal payment fails.
+    STRIPE_PAST_DUE_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(7),
     STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
     STRIPE_PRODUCT_PRO: z.string().startsWith('prod_').optional(),
     STRIPE_PRICE_PRO_MONTHLY: z.string().startsWith('price_').optional(),
@@ -127,6 +204,28 @@ const environmentSchema = z
         code: 'custom',
         path: ['PRESSAY_BETTER_AUTH_JWKS_URL'],
         message: 'Better Auth issuer and JWKS URL must be configured together',
+      });
+    }
+
+    // The desktop app pins one entitlement key per environment. Signing
+    // production snapshots with the staging key makes every Mac show Free, and
+    // the reverse would let staging tokens unlock production builds.
+    const productionKeyId = environment.ENTITLEMENT_SIGNING_KEY_ID.startsWith(
+      'pressay-entitlement-production-',
+    );
+    if (environment.PRESSAY_DEPLOYMENT_ENV === 'production' && !productionKeyId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ENTITLEMENT_SIGNING_KEY_ID'],
+        message:
+          'production must sign entitlements with a pressay-entitlement-production-* key',
+      });
+    }
+    if (environment.PRESSAY_DEPLOYMENT_ENV !== 'production' && productionKeyId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ENTITLEMENT_SIGNING_KEY_ID'],
+        message: 'only production may sign with a production entitlement key',
       });
     }
 
@@ -212,14 +311,24 @@ export type Environment = z.infer<typeof environmentSchema> & {
 
 let cachedEnvironment: Environment | undefined;
 
+/**
+ * Normalize a comma-separated origin list to exact browser origins
+ * (scheme + host + port, lowercase, no trailing slash or path). Throws on an
+ * entry that is not a URL so a typo fails configuration instead of CORS.
+ */
+export function parseAllowedOrigins(value: string): string[] {
+  return value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => new URL(origin).origin);
+}
+
 export function getEnvironment(source: NodeJS.ProcessEnv = process.env): Environment {
   if (source === process.env && cachedEnvironment) return cachedEnvironment;
 
   const parsed = environmentSchema.parse(source);
-  const allowedOrigins = parsed.PRESSAY_ALLOWED_ORIGINS.split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean)
-    .map((origin) => new URL(origin).origin);
+  const allowedOrigins = parseAllowedOrigins(parsed.PRESSAY_ALLOWED_ORIGINS);
 
   if (allowedOrigins.length === 0) {
     throw new Error('PRESSAY_ALLOWED_ORIGINS must contain at least one origin');
