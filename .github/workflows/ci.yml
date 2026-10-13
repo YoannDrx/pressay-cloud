@@ -35,7 +35,7 @@ jobs:
       # Local CI database: never a Neon, staging or production URL.
       CI_DATABASE_URL: postgresql://postgres@localhost:5432/pressay_ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
