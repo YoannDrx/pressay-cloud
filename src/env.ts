@@ -191,7 +191,7 @@ const environmentSchema = z
       .default('https://press-say.app/account?checkout=success'),
     STRIPE_CHECKOUT_CANCEL_URL: z
       .url()
-      .default('https://press-say.app/pricing?checkout=cancelled'),
+      .default('https://press-say.app/checkout/cancel'),
     STRIPE_PORTAL_RETURN_URL: z.url().default('https://press-say.app/account'),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   })
