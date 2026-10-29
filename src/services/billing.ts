@@ -579,8 +579,13 @@ async function processStripeFinancialEvent(
       if (await stripeEventAlreadyProcessed(event.id)) return false;
       await cancelReversedStripeSubscriptions(customerId, charge.created);
       override = 'refunded';
-    } else if (dispute.status === 'won') {
-      // Restore what Stripe says now; never resurrect a cancelled subscription.
+    } else if (
+      dispute.status === 'won' ||
+      dispute.status === 'warning_closed' ||
+      dispute.status === 'prevented'
+    ) {
+      // Closed in the merchant's favour (won, inquiry closed, or prevented):
+      // restore what Stripe says now; never resurrect a cancelled subscription.
       const current = await currentStripeSubscriptionState(customerId);
       override = current?.status ?? null;
       subscriptionId = current?.id ?? null;

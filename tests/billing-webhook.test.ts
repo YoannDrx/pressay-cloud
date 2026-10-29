@@ -377,6 +377,42 @@ describe('Stripe webhook processing', () => {
     expect(cancelSubscription).not.toHaveBeenCalled();
   });
 
+  it.each(['warning_closed', 'prevented'] as const)(
+    'restores the live Stripe status when a dispute closes as %s',
+    async (status) => {
+      const disputePayload = JSON.stringify({
+        id: `evt_pressay_dispute_${status}`,
+        object: 'event',
+        api_version: '2026-07-29.dahlia',
+        created: 1_786_925_000,
+        type: 'charge.dispute.closed',
+        data: {
+          object: {
+            id: 'dp_pressay_1',
+            object: 'dispute',
+            charge: 'ch_pressay_1',
+            amount: 799,
+            currency: 'eur',
+            status,
+          },
+        },
+      });
+      retrieveCharge.mockResolvedValueOnce({
+        id: 'ch_pressay_1',
+        customer: 'cus_pressay_1',
+        amount: 799,
+        created: 1_786_924_800,
+      });
+      retrieveSubscription.mockResolvedValueOnce(subscriptionSnapshot());
+      query
+        .mockResolvedValueOnce([{ provider_subscription_id: 'sub_pressay_1' }])
+        .mockResolvedValueOnce([{ state: 'applied' }]);
+      await processStripeWebhook(disputePayload, sign(disputePayload));
+      expect(callArgument(1, 12)).toBe('active');
+      expect(cancelSubscription).not.toHaveBeenCalled();
+    },
+  );
+
   it('cancels renewals after a lost dispute', async () => {
     const disputePayload = JSON.stringify({
       id: 'evt_pressay_dispute_lost',
