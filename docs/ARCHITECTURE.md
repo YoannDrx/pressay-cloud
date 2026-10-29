@@ -144,6 +144,7 @@ any failure is retried with backoff.
 | Rate-limit buckets                                             | Until window expiry                                                         | Daily purge             |
 | Retired Cloud sessions and verifications                       | Until expiry                                                                | Daily purge             |
 | Deletion tombstone (`auth_user_id`)                            | Kept to prevent re-attribution                                              | Kept                    |
+| Anonymous download events (`download_event`, no personal data) | Kept as aggregate statistics                                                | Kept                    |
 
 `GET /v1/me/export` returns the caller's data as JSON (account, contact,
 devices, entitlement, subscriptions, payments, consents, usage, grants, referral
