@@ -10,6 +10,7 @@ import type {
 } from '../contracts/account.js';
 import {
   deviceListResponseSchema,
+  devicePlatformSchema,
   entitlementSchema,
   meResponseSchema,
   usageSnapshotSchema,
@@ -45,6 +46,7 @@ const webBootstrapRowSchema = z.object({
 const deviceRowSchema = z.object({
   id: z.uuid(),
   display_name: z.string(),
+  platform: devicePlatformSchema,
   app_variant: z.enum(['direct', 'mas']),
   app_version: z.string(),
   approved: z.boolean(),
@@ -142,13 +144,14 @@ export async function bootstrapAccount(
         result_entitlement_valid_until AS entitlement_valid_until,
         result_entitlement_offline_grace_until AS entitlement_offline_grace_until,
         result_entitlement_revision AS entitlement_revision
-      FROM bootstrap_pressay_account($1, decode($2, 'hex'), $3, $4, $5)`,
+      FROM bootstrap_pressay_account($1, decode($2, 'hex'), $3, $4, $5, $6)`,
       [
         authUserId,
         deviceIdentifierHash(input.deviceIdentifier),
         input.displayName,
         input.appVariant,
         input.appVersion,
+        input.platform,
       ],
     );
     const row = bootstrapRowSchema.parse(rows[0]);
@@ -234,6 +237,7 @@ export async function listDevices(authUserId: string): Promise<readonly Device[]
     `SELECT
       d.id,
       d.display_name,
+      d.platform,
       d.app_variant,
       d.app_version,
       d.approved_at IS NOT NULL AS approved,
@@ -251,6 +255,7 @@ export async function listDevices(authUserId: string): Promise<readonly Device[]
       return {
         id: row.id,
         displayName: row.display_name,
+        platform: row.platform,
         appVariant: row.app_variant,
         appVersion: row.app_version,
         approved: row.approved,

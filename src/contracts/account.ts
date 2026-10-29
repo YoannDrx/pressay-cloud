@@ -3,6 +3,9 @@ import { z } from 'zod';
 const uuid = z.uuid();
 const isoDateTime = z.iso.datetime({ offset: true });
 
+/** Desktop platforms that share the account's three Cloud device slots. */
+export const devicePlatformSchema = z.enum(['macos', 'windows']);
+
 export const bootstrapAccountRequestSchema = z.strictObject({
   deviceIdentifier: z
     .string()
@@ -16,6 +19,8 @@ export const bootstrapAccountRequestSchema = z.strictObject({
     .min(1)
     .max(64)
     .regex(/^[0-9A-Za-z.+-]+$/),
+  // Older macOS clients omit the field, so it defaults to macOS.
+  platform: devicePlatformSchema.default('macos'),
 });
 
 export const entitlementSchema = z.strictObject({
@@ -30,6 +35,7 @@ export const entitlementSchema = z.strictObject({
 export const deviceSchema = z.strictObject({
   id: uuid,
   displayName: z.string(),
+  platform: devicePlatformSchema,
   appVariant: z.enum(['direct', 'mas']),
   appVersion: z.string(),
   approved: z.boolean(),
