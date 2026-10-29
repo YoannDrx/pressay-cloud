@@ -133,7 +133,9 @@ operationsRoutes.get('/admin/overview', async (c) => {
     (SELECT COALESCE(sum(amount_minor),0)::int FROM referral_reward WHERE kind='credit' AND status='applied') AS credits_minor,
     (SELECT count(*)::int FROM provider_event WHERE state='failed') AS failed_webhooks,
     (SELECT COALESCE(sum(transcription_seconds_used),0)::int FROM usage_period WHERE period_start=date_trunc('month',now())::date) AS cloud_seconds,
-    (SELECT COALESCE(sum(transformations_used),0)::int FROM usage_period WHERE period_start=date_trunc('month',now())::date) AS cloud_transformations`,
+    (SELECT COALESCE(sum(transformations_used),0)::int FROM usage_period WHERE period_start=date_trunc('month',now())::date) AS cloud_transformations,
+    (SELECT count(*)::int FROM download_event WHERE created_at>now()-interval '7 days') AS downloads_7d,
+    (SELECT count(*)::int FROM download_event WHERE created_at>now()-interval '30 days') AS downloads_30d`,
     [],
   );
   const plans = await getSql().query(

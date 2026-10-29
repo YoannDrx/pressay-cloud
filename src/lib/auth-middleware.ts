@@ -216,6 +216,44 @@ function unauthorized(reason?: BearerRejectionReason): ApiError {
   });
 }
 
+const DOWNLOAD_EVENT_AUDIENCE = 'pressay-download-event';
+const DOWNLOAD_EVENT_TOKEN_USE = 'pressay_download_event';
+
+/**
+ * Download events carry no user: only the web server may report them, with a
+ * short-lived token signed by its Better Auth keys for this audience alone.
+ */
+export const requireDownloadEventToken = createMiddleware<AppEnvironment>(
+  async (context, next) => {
+    const match = /^Bearer\s+([A-Za-z0-9._~+/=-]+)$/.exec(
+      context.req.header('Authorization') ?? '',
+    );
+    const environment = getEnvironment();
+    const issuer = environment.PRESSAY_BETTER_AUTH_JWT_ISSUER;
+    const jwksUrl = environment.PRESSAY_BETTER_AUTH_JWKS_URL;
+    try {
+      if (!match?.[1]) throw new BearerRejected('malformed');
+      if (!issuer || !jwksUrl) throw new BearerRejected('bad_issuer');
+      const { payload } = await jwtVerify(match[1], remoteKeySet(jwksUrl), {
+        algorithms: ['EdDSA', 'ES256', 'ES512', 'RS256', 'PS256'],
+        issuer: issuerVariants(issuer),
+        audience: DOWNLOAD_EVENT_AUDIENCE,
+        maxTokenAge: '5m',
+      });
+      if (payload.token_use !== DOWNLOAD_EVENT_TOKEN_USE)
+        throw new BearerRejected('invalid_token_use');
+    } catch (error) {
+      const reason = classifyJwtError(error);
+      writeLog('warn', 'auth.download_event_rejected', {
+        reason,
+        request_id: context.get('requestId'),
+      });
+      throw unauthorized(reason);
+    }
+    await next();
+  },
+);
+
 export const requireAuthentication = createMiddleware<AppEnvironment>(
   async (context, next) => {
     const authorization = context.req.header('Authorization');
