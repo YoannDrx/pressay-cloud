@@ -50,6 +50,7 @@ describe('account service', () => {
       displayName: 'MacBook Air',
       appVariant: 'direct',
       appVersion: '2.0.0-beta.1',
+      platform: 'macos',
     });
 
     const expectedHash = createHmac('sha256', deviceSecret)
@@ -61,9 +62,41 @@ describe('account service', () => {
       'MacBook Air',
       'direct',
       '2.0.0-beta.1',
+      'macos',
     ]);
     expect(JSON.stringify(query.mock.calls)).not.toContain(rawIdentifier);
     expect(result).toMatchObject({ accountId, created: true, deviceId });
+  });
+
+  it('passes a Windows platform to the bootstrap function', async () => {
+    query.mockResolvedValueOnce([
+      {
+        account_id: accountId,
+        account_created: false,
+        device_id: deviceId,
+        entitlement_tier: 'free',
+        entitlement_source: 'none',
+        entitlement_valid_from: '2026-10-29T00:00:00.000Z',
+        entitlement_valid_until: null,
+        entitlement_offline_grace_until: null,
+        entitlement_revision: '1',
+      },
+    ]);
+
+    await bootstrapAccount(authUserId, {
+      deviceIdentifier: 'pressay-device:windows-id',
+      displayName: 'Pressay PC',
+      appVariant: 'direct',
+      appVersion: '2.1.0',
+      platform: 'windows',
+    });
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "bootstrap_pressay_account($1, decode($2, 'hex'), $3, $4, $5, $6)",
+      ),
+      [authUserId, expect.any(String), 'Pressay PC', 'direct', '2.1.0', 'windows'],
+    );
   });
 
   it('maps the atomic three-device rejection to a stable conflict', async () => {
@@ -74,6 +107,7 @@ describe('account service', () => {
         displayName: 'Mac mini',
         appVariant: 'mas',
         appVersion: '2.0.0',
+        platform: 'macos',
       }),
     ).rejects.toMatchObject({ status: 409, code: 'device_limit_reached' });
   });
@@ -129,12 +163,23 @@ describe('account service', () => {
       {
         id: deviceId,
         display_name: 'MacBook Air',
+        platform: 'macos',
         app_variant: 'direct',
         app_version: '2.0.0',
         approved: false,
         last_seen_at: '2026-08-17T00:00:00.000Z',
         created_at: '2026-08-17T00:00:00.000Z',
         device_identifier_hash: 'must-not-leak',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000003',
+        display_name: 'Pressay PC',
+        platform: 'windows',
+        app_variant: 'direct',
+        app_version: '2.1.0',
+        approved: true,
+        last_seen_at: '2026-08-16T00:00:00.000Z',
+        created_at: '2026-08-16T00:00:00.000Z',
       },
     ]);
 
@@ -143,13 +188,25 @@ describe('account service', () => {
       {
         id: deviceId,
         displayName: 'MacBook Air',
+        platform: 'macos',
         appVariant: 'direct',
         appVersion: '2.0.0',
         approved: false,
         lastSeenAt: '2026-08-17T00:00:00.000Z',
         createdAt: '2026-08-17T00:00:00.000Z',
       },
+      {
+        id: '00000000-0000-4000-8000-000000000003',
+        displayName: 'Pressay PC',
+        platform: 'windows',
+        appVariant: 'direct',
+        appVersion: '2.1.0',
+        approved: true,
+        lastSeenAt: '2026-08-16T00:00:00.000Z',
+        createdAt: '2026-08-16T00:00:00.000Z',
+      },
     ]);
+    expect(query.mock.calls[0]?.[0]).toContain('d.platform');
   });
 
   it('returns used, reserved and configured quota independently', async () => {

@@ -59,4 +59,25 @@ describe('database migrations', () => {
     )[1];
     expect(webFunction).not.toContain('INSERT INTO pressay_device');
   });
+
+  it('accepts Windows devices without breaking five-argument macOS bootstraps', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0021_windows_devices.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain(
+      'DROP CONSTRAINT IF EXISTS pressay_device_platform_check',
+    );
+    expect(migration).toContain("CHECK (platform IN ('macos', 'windows'))");
+    expect(migration).toContain("ALTER COLUMN platform SET DEFAULT 'macos'");
+    expect(migration).toContain(
+      'DROP FUNCTION IF EXISTS bootstrap_pressay_account(text, bytea, text, text, text);',
+    );
+    expect(migration).toContain('CREATE OR REPLACE FUNCTION bootstrap_pressay_account');
+    expect(migration).toContain("p_platform text DEFAULT 'macos'");
+    expect(migration).toContain('platform = EXCLUDED.platform');
+    expect(migration).toContain(') >= 3 THEN');
+    expect(migration).not.toMatch(/^\s*CREATE (TABLE|FUNCTION|INDEX) /m);
+  });
 });

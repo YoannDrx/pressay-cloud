@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const bootstrapAccount = vi.hoisted(() => vi.fn());
 const bootstrapWebAccount = vi.hoisted(() => vi.fn());
 const requestAccountDeletion = vi.hoisted(() => vi.fn());
+const listDevices = vi.hoisted(() => vi.fn());
 
 vi.mock('../src/services/accounts.ts', () => ({
   bootstrapAccount,
@@ -10,7 +11,7 @@ vi.mock('../src/services/accounts.ts', () => ({
   bootstrapWebAccount,
   getMe: vi.fn(),
   getUsage: vi.fn(),
-  listDevices: vi.fn(),
+  listDevices,
   requestAccountDeletion,
   revokeDevice: vi.fn(),
 }));
@@ -19,10 +20,36 @@ import app from '../src/app.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
 import { bearer, configureTestIdentity, webProxyToken } from './helpers/identity.ts';
 
+function desktopBody() {
+  return {
+    deviceIdentifier: 'pressay-device:stable-id',
+    displayName: 'Pressay Mac',
+    appVariant: 'direct',
+    appVersion: '2.1.0',
+  };
+}
+
+function bootstrapResult() {
+  return {
+    accountId: '00000000-0000-4000-8000-000000000001',
+    created: false,
+    deviceId: '00000000-0000-4000-8000-000000000002',
+    entitlement: {
+      tier: 'free',
+      source: 'none',
+      validFrom: '2026-10-29T00:00:00.000Z',
+      validUntil: null,
+      offlineGraceUntil: null,
+      revision: 1,
+    },
+  };
+}
+
 describe('account routes', () => {
   beforeEach(() => {
     bootstrapAccount.mockReset();
     bootstrapWebAccount.mockReset();
+    listDevices.mockReset();
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     clearEnvironmentCacheForTests();
     configureTestIdentity();
@@ -87,6 +114,72 @@ describe('account routes', () => {
     expect(await response.json()).toMatchObject({
       created: false,
       device: { id: '00000000-0000-4000-8000-000000000002' },
+    });
+  });
+
+  it('registers a client that omits the platform as macOS', async () => {
+    bootstrapAccount.mockResolvedValueOnce(bootstrapResult());
+
+    const response = await app.request('/v1/accounts/bootstrap', {
+      method: 'POST',
+      headers: { ...(await bearer()), 'content-type': 'application/json' },
+      body: JSON.stringify(desktopBody()),
+    });
+
+    expect(response.status).toBe(200);
+    expect(bootstrapAccount).toHaveBeenCalledWith(
+      'auth-user',
+      expect.objectContaining({ platform: 'macos' }),
+    );
+  });
+
+  it('accepts a Windows desktop device', async () => {
+    bootstrapAccount.mockResolvedValueOnce(bootstrapResult());
+
+    const response = await app.request('/v1/accounts/bootstrap', {
+      method: 'POST',
+      headers: { ...(await bearer()), 'content-type': 'application/json' },
+      body: JSON.stringify({ ...desktopBody(), platform: 'windows' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(bootstrapAccount).toHaveBeenCalledWith(
+      'auth-user',
+      expect.objectContaining({ platform: 'windows' }),
+    );
+  });
+
+  it('rejects an unknown platform before calling the service', async () => {
+    const response = await app.request('/v1/accounts/bootstrap', {
+      method: 'POST',
+      headers: { ...(await bearer()), 'content-type': 'application/json' },
+      body: JSON.stringify({ ...desktopBody(), platform: 'linux' }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(bootstrapAccount).not.toHaveBeenCalled();
+  });
+
+  it('lists devices with their platform', async () => {
+    listDevices.mockResolvedValueOnce([
+      {
+        id: '00000000-0000-4000-8000-000000000002',
+        displayName: 'Pressay PC',
+        platform: 'windows',
+        appVariant: 'direct',
+        appVersion: '2.1.0',
+        approved: true,
+        lastSeenAt: '2026-10-29T00:00:00.000Z',
+        createdAt: '2026-10-29T00:00:00.000Z',
+      },
+    ]);
+
+    const response = await app.request('/v1/devices', { headers: await bearer() });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      devices: [expect.objectContaining({ platform: 'windows' })],
+      limit: 3,
     });
   });
 
