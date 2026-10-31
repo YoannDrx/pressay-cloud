@@ -1,5 +1,5 @@
 import { zValidator } from '@hono/zod-validator';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 
 import {
@@ -12,6 +12,10 @@ import {
 import { requireAuthentication } from '../lib/auth-middleware.js';
 import { ApiError } from '../lib/errors.js';
 import { rateLimit } from '../lib/rate-limit.js';
+import {
+  isRecentAuthentication,
+  RECENT_AUTHENTICATION_MAX_AGE_SECONDS,
+} from '../lib/recent-authentication.js';
 import {
   assertActiveDevice,
   bootstrapAccount,
@@ -78,6 +82,7 @@ accountRoutes.get('/me', async (context) => {
 });
 
 accountRoutes.delete('/me', rateLimit('account_deletion', 5), async (context) => {
+  requireRecentWebAuthentication(context);
   await requestAccountDeletion(context.get('authUserId'), {
     acknowledgeAppleSubscription:
       context.req.query('acknowledgeAppleSubscription') === 'true',
@@ -136,6 +141,33 @@ accountRoutes.get('/entitlements/jwks', (context) => {
 accountRoutes.get('/usage', async (context) => {
   return context.json(await getUsage(context.get('authUserId')));
 });
+
+/**
+ * A web session can delete its account only with proof, bound to that
+ * session, of a sign-in or second factor less than ten minutes old. The web
+ * server adds it to its proxy token after Better Auth has checked the session
+ * freshness; a long-lived session alone is not enough.
+ *
+ * Desktop OAuth access tokens (never `webProxy`) keep their current contract:
+ * they are short-lived and refreshed by the signed-in app itself.
+ */
+function requireRecentWebAuthentication(context: Context<AppEnvironment>): void {
+  if (!context.get('authWebProxy')) return;
+  const sessionBound = context.get('authSessionId') !== '';
+  if (
+    sessionBound &&
+    (isRecentAuthentication(context.get('authSignedInAt')) ||
+      isRecentAuthentication(context.get('authStepUpAt')))
+  )
+    return;
+  throw new ApiError(
+    403,
+    'recent_authentication_required',
+    'Sign in again to delete this account',
+    {},
+    { maxAgeSeconds: String(RECENT_AUTHENTICATION_MAX_AGE_SECONDS) },
+  );
+}
 
 function zUuid(value: string): string {
   const result = z.uuid().safeParse(value);
