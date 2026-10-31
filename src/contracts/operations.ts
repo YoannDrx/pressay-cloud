@@ -259,6 +259,47 @@ export const adminAlertsSchema = z.object({
   failed_payments_24h: integer,
   checkedAt: z.string(),
 });
+export const adminMetricsSchema = z.object({
+  subscribers: z.array(
+    z.object({
+      provider: z.enum(['stripe', 'app_store']),
+      billing_interval: z.enum(['month', 'year']),
+      status: z.enum(['trialing', 'active', 'past_due', 'grace']),
+      environment: z.enum(['Production', 'Sandbox']),
+      count: integer,
+    }),
+  ),
+  mrr: z.array(
+    z.object({
+      provider: z.enum(['stripe', 'app_store']),
+      currency: z.string(),
+      mrr_minor: integer,
+      arr_minor: integer,
+      subscriptions: integer,
+      estimated_subscriptions: integer,
+    }),
+  ),
+  signups: z.array(z.object({ day: z.iso.date(), count: integer })),
+  activeAccounts: z.object({ active_7d: integer, active_30d: integer }),
+  grants: z.array(z.object({ source: z.string(), count: integer })),
+  collectedThisMonth: z.array(
+    z.object({
+      currency: z.string(),
+      paid_minor: integer,
+      refunded_minor: integer,
+      invoices: integer,
+    }),
+  ),
+  downloads: z.array(
+    z.object({
+      platform: z.enum(['macos', 'windows']),
+      app_version: z.string(),
+      last_7d: integer,
+      last_30d: integer,
+    }),
+  ),
+  generatedAt: z.string(),
+});
 export const adminUserDetailSchema = z.object({
   account: z.object({
     accountId: z.uuid(),

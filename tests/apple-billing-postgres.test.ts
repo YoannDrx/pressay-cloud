@@ -56,6 +56,7 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
         '0017_operations.sql',
         '0019_billing_hardening.sql',
         '0025_provider_event_account.sql',
+        '0026_subscription_price.sql',
       ]) {
         await client.query(
           await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'),
@@ -152,6 +153,11 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
           )
         ).rows,
       ).toEqual([{ linked: 1 }]);
+      // No price in the signed transaction: the App Store catalogue applies.
+      expect(
+        (await client.query('SELECT amount_minor,currency FROM billing_subscription'))
+          .rows,
+      ).toEqual([{ amount_minor: expect.any(Number) as number, currency: 'eur' }]);
       expect(
         (
           await client.query(
@@ -296,6 +302,8 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
                     id: 'price_test',
                     product: 'prod_test',
                     recurring: { interval: 'month' },
+                    unit_amount: 799,
+                    currency: 'eur',
                   },
                 },
               ],
@@ -313,6 +321,14 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
           )
         ).rows,
       ).toEqual([{ account_id: accountId }]);
+      // Metrics use the price billed on the subscription item.
+      expect(
+        (
+          await client.query(
+            "SELECT amount_minor,currency FROM billing_subscription WHERE provider='stripe'",
+          )
+        ).rows,
+      ).toEqual([{ amount_minor: 799, currency: 'eur' }]);
       expect(await deliver(event)).toEqual({ duplicateOrIgnored: true });
       expect(
         await deliver({

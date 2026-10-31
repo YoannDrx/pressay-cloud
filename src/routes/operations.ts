@@ -10,6 +10,7 @@ import { expectedStripeLivemode, getEnvironment } from '../env.js';
 import { getStripe } from '../billing/stripe-client.js';
 import { bootstrapWebAccount, recordAccountContact } from '../services/accounts.js';
 import { customerDetail, searchAccounts } from '../services/admin-customers.js';
+import { adminMetrics } from '../services/admin-metrics.js';
 import {
   billingAlerts,
   financialEvents,
@@ -403,6 +404,7 @@ operationsRoutes.post('/admin/billing/events/:provider/:id/replay', async (c) =>
   );
 });
 operationsRoutes.get('/admin/alerts', async (c) => c.json(await billingAlerts()));
+operationsRoutes.get('/admin/metrics', async (c) => c.json(await adminMetrics()));
 operationsRoutes.get('/admin/audit-log', async (c) => {
   const parsed = auditQuerySchema.safeParse(c.req.query());
   if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
