@@ -256,7 +256,7 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
       );
       const stripe = new Stripe('sk_test_placeholder');
       async function deliver(event: object) {
-        const payload = JSON.stringify(event);
+        const payload = JSON.stringify({ livemode: false, ...event });
         const signature = stripe.webhooks.generateTestHeaderString({
           payload,
           secret: 'whsec_local_postgres_test',
@@ -341,7 +341,7 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
       );
       const stripe = new Stripe('sk_test_placeholder');
       return async (event: object) => {
-        const payload = JSON.stringify(event);
+        const payload = JSON.stringify({ livemode: false, ...event });
         const signature = stripe.webhooks.generateTestHeaderString({
           payload,
           secret: 'whsec_local_postgres_test',

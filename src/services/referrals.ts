@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import type Stripe from 'stripe';
 import { getSql } from '../db/client.js';
 import { getStripe } from '../billing/stripe-client.js';
-import { getEnvironment } from '../env.js';
+import { expectedStripeLivemode, getEnvironment } from '../env.js';
 import { ApiError } from '../lib/errors.js';
 
 export function requireReferrals() {
@@ -51,10 +51,7 @@ function objectId(value: string | { id: string } | null | undefined) {
 /** Called on every verified delivery, even when entitlement projection is a duplicate. */
 export async function captureReferralEvent(event: Stripe.Event) {
   const env = getEnvironment();
-  if (
-    !env.PRESSAY_REFERRALS_ENABLED ||
-    event.livemode !== (env.PRESSAY_DEPLOYMENT_ENV === 'production')
-  )
+  if (!env.PRESSAY_REFERRALS_ENABLED || event.livemode !== expectedStripeLivemode(env))
     return;
   const stripe = getStripe();
   if (event.type === 'invoice.paid') {

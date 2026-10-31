@@ -123,6 +123,7 @@ billingRoutes.post('/webhooks/stripe', async (context) => {
   writeLog('info', 'billing.webhook.completed', {
     outcome: result.duplicateOrIgnored ? 'ignored' : 'applied',
     provider: 'stripe',
+    ...(result.code ? { code: result.code } : {}),
   });
   return context.json({ received: true });
 });

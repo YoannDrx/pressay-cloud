@@ -114,7 +114,10 @@ as `provider_event.state='failed'` with a stable code and retried on redelivery.
 ## Stripe billing
 
 Webhooks re-read the subscription from Stripe before projecting it, so out-of-
-order and same-second events converge on Stripe's current state. A `past_due`
+order and same-second events converge on Stripe's current state. Production
+accepts only live-mode events and every other environment only test-mode
+events; an event from the other mode is acknowledged with 200, logged as
+`billing.webhook.livemode_mismatch` and never written to Postgres. A `past_due`
 subscription keeps Pro for `STRIPE_PAST_DUE_GRACE_DAYS` from the period start at
 most. A full refund or a lost dispute cancels the Stripe subscription
 immediately; a won dispute restores Stripe's current state. Checkout refuses a
