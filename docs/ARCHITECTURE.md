@@ -151,7 +151,7 @@ access tokens keep their existing deletion contract.
 ## Support reads
 
 `/v1/admin/*` is reserved to the single operations owner. Reads that return a
-person's data (`users`, `users/:id`, `referrals`) need a second-factor step-up
+person's data (`users`, `users/:id`, `referrals`, `audit-log`) need a second-factor step-up
 less than ten minutes old and are written to `operations_audit` as
 `personal_data_read`, without the search terms.
 
@@ -171,12 +171,47 @@ its grants (reads are counted, not listed). With `?include=identity`, the web
 also reads linked sign-in methods, passkeys and sessions from its own database,
 and the API records that read as `admin.user.identity.read`.
 
+## Support actions
+
+Every support mutation needs the owner role, a step-up less than ten minutes
+old, a reason (3 to 500 characters) and the form's idempotency key; it counts
+towards the 20 administrative mutations per minute. Each action writes a
+`*.requested` entry, then its outcome (`succeeded`, `replayed` or `failed`
+with an error code) in `operations_audit`, with `target_account_id` and
+non-personal `details` (identifiers, durations, counts).
+
+| Route                                | Effect                                                                                                                                            |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /v1/admin/users/:id/grants`    | Offers Pro for 1 to 365 days (`access_grant` source `support`, with reason and author), then recomputes the entitlement. Paid subscriptions stay. |
+| `POST /v1/admin/grants/:id/extend`   | Extends a non-revoked grant from its end, or from now once ended.                                                                                 |
+| `POST /v1/admin/grants/:id/revoke`   | Revokes a grant, then recomputes the entitlement.                                                                                                 |
+| `POST /v1/admin/devices/:id/revoke`  | Revokes a device; revoking twice keeps the first date.                                                                                            |
+| `POST /v1/admin/devices/:id/restore` | Lifts a revocation when fewer than three devices are active.                                                                                      |
+| `POST /v1/admin/users/:id/deletion`  | Queues the deletion like `DELETE /v1/me` (never the owner's own account; an active App Store subscription must be acknowledged).                  |
+| `POST /v1/admin/audit/external`      | Records an action the web performs on its own database (sign-out everywhere) and returns the identity subject to act on. Not relayed to browsers. |
+
+Idempotency keys are claimed in `operations_request` in the same transaction as
+the action: a failed action leaves its key free, a replayed key returns the
+first result without acting twice, and a key reused on another target is
+refused.
+
+A revoked computer is refused at sign-in until it is restored, by its owner
+(`GET /v1/devices?include=revoked`, `POST /v1/devices/:id/restore`) or by
+support, within the shared limit of three active devices.
+
+`GET /v1/admin/audit-log` (step-up, audited as `admin.audit.read`) returns 50
+entries per page (`cursor`), newest first, with the author's account and
+email, filtered by action (exact or dotted prefix), target (account id or exact
+target), UTC day range (`from`, `to`) and `reads=exclude` to hide
+personal-data reads.
+
 ## Retention matrix
 
 | Data                                                           | Retention                                                                   | Mechanism               |
 | -------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------- |
 | Account, devices, entitlement, usage counters, sync ciphertext | Until account deletion                                                      | Cascade on deletion job |
 | Idempotency records                                            | 30 days after creation, once expired (`PRESSAY_RETENTION_IDEMPOTENCY_DAYS`) | Daily purge             |
+| Administrative idempotency keys (`operations_request`)         | 30 days after creation (`PRESSAY_RETENTION_IDEMPOTENCY_DAYS`)               | Daily purge             |
 | Settled usage reservations                                     | 395 days (`PRESSAY_RETENTION_USAGE_RESERVATION_DAYS`)                       | Daily purge             |
 | Provider event receipts without financial record               | 400 days (`PRESSAY_RETENTION_PROVIDER_EVENT_DAYS`)                          | Daily purge             |
 | Financial ledger (`billing_financial_event`) and its events    | Accounting obligation (10 years in France)                                  | Kept                    |

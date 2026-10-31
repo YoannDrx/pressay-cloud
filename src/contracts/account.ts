@@ -64,9 +64,13 @@ export const meResponseSchema = z.strictObject({
   entitlement: entitlementSchema,
 });
 
+export const revokedDeviceSchema = deviceSchema.extend({ revokedAt: isoDateTime });
+
 export const deviceListResponseSchema = z.strictObject({
   devices: z.array(deviceSchema),
   limit: z.literal(3),
+  // Only with `?include=revoked`: revoked devices the owner can restore.
+  revokedDevices: z.array(revokedDeviceSchema).optional(),
 });
 
 export const usageSnapshotSchema = z.strictObject({
@@ -98,4 +102,5 @@ export const entitlementResponseSchema = z.strictObject({
 export type BootstrapAccountRequest = z.infer<typeof bootstrapAccountRequestSchema>;
 export type Entitlement = z.infer<typeof entitlementSchema>;
 export type Device = z.infer<typeof deviceSchema>;
+export type RevokedDevice = z.infer<typeof revokedDeviceSchema>;
 export type UsageSnapshot = z.infer<typeof usageSnapshotSchema>;

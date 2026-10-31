@@ -90,6 +90,13 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
             'completed', 201, now(), now() + interval '1 day', now())`,
         [accountId],
       );
+      // Administrative idempotency keys: one older than 30 days, one recent.
+      await run('TRUNCATE operations_request');
+      await run(
+        `INSERT INTO operations_request (request_key, action, target_id, created_at) VALUES
+          (gen_random_uuid(), 'grant.create', 'old', now() - interval '31 days'),
+          (gen_random_uuid(), 'grant.create', 'new', now())`,
+      );
       // Usage reservations: an old finalized one and an open one.
       const oldPeriod = await run(
         "SELECT date_trunc('month', now() - interval '400 days')::date AS period",
@@ -147,11 +154,15 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
 
       await expect(purgeExpiredRecords()).resolves.toEqual({
         idempotencyRecords: 1,
+        operationsRequests: 1,
         usageReservations: 1,
         providerEvents: 1,
         legacySessions: 1,
         legacyVerifications: 0,
       });
+      expect(await run('SELECT target_id FROM operations_request')).toEqual([
+        { target_id: 'new' },
+      ]);
       expect(await run('SELECT idempotency_key FROM idempotency_record')).toEqual([
         { idempotency_key: 'new-idempotency-key-0001' },
       ]);

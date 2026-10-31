@@ -49,6 +49,49 @@ export const gateSchema = reasonSchema
     evidence: z.string().trim().max(2000),
   })
   .refine((v) => v.status !== 'passed' || v.evidence.length >= 10, 'Evidence required');
+/** Support actions carry the form's idempotency key and a mandatory reason. */
+export const supportActionSchema = reasonSchema.extend({ idempotencyKey: z.uuid() });
+export const supportGrantSchema = supportActionSchema.extend({
+  days: z.coerce.number().int().min(1).max(365),
+});
+export const adminDeletionSchema = supportActionSchema.extend({
+  // Forms submit text; the API also accepts a JSON boolean.
+  acknowledgeAppleSubscription: z
+    .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
+    .default(false),
+});
+const auditCount = z.number().int().min(0).max(100000);
+/** Actions performed by the web on its own database, recorded by the Cloud. */
+export const externalAuditSchema = supportActionSchema.extend({
+  action: z.enum(['user.sessions.revoke']),
+  targetAccountId: z.uuid(),
+  result: z.enum(['requested', 'succeeded', 'failed']),
+  details: z
+    .strictObject({
+      webSessions: auditCount,
+      oauthRefreshTokens: auditCount,
+      oauthAccessTokens: auditCount,
+      errorCode: z.string().regex(/^[a-z0-9_]{1,64}$/),
+    })
+    .partial()
+    .default({}),
+});
+const auditDay = z.iso.date();
+export const auditQuerySchema = z.object({
+  // Exact action or a dotted prefix such as `grant` or `device.restore`.
+  action: z
+    .string()
+    .trim()
+    .max(80)
+    .regex(/^[a-z0-9_.]*$/)
+    .default(''),
+  // Account id (matches the entry's account), or any exact target id.
+  target: z.string().trim().max(120).default(''),
+  from: auditDay.optional(),
+  to: auditDay.optional(),
+  reads: z.enum(['include', 'exclude']).default('include'),
+  cursor: z.coerce.number().int().positive().optional(),
+});
 export const userQuerySchema = z.object({
   search: z.string().trim().max(120).default(''),
   // Apple Sandbox access (App Review, TestFlight) is never counted as paid Pro.
@@ -119,6 +162,38 @@ export const adminUsersSchema = z.object({
   ),
   nextCursor: z.uuid().nullable(),
   searchKind: z.enum(adminUserSearchKinds),
+});
+const auditEntrySchema = z.object({
+  id: z.string(),
+  actor_id: z.uuid().nullable(),
+  action: z.string(),
+  target_id: z.string(),
+  target_account_id: z.uuid().nullable(),
+  reason: z.string(),
+  result: z.string(),
+  request_id: z.string(),
+  details: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
+    .nullable(),
+  created_at: date,
+});
+export const adminAuditLogSchema = z.object({
+  entries: z.array(auditEntrySchema.extend({ actor_email: z.string().nullable() })),
+  nextCursor: z.string().nullable(),
+});
+export const supportGrantResultSchema = z.object({
+  grantId: z.uuid(),
+  accountId: z.uuid(),
+  days: integer,
+  endsAt: date,
+  replayed: z.boolean().default(false),
+});
+export const deviceActionResultSchema = z.object({
+  deviceId: z.uuid(),
+  accountId: z.uuid(),
+  platform: z.enum(['macos', 'windows']),
+  changed: z.boolean(),
+  replayed: z.boolean().default(false),
 });
 export const adminUserDetailSchema = z.object({
   account: z.object({
@@ -227,6 +302,8 @@ export const adminUserDetailSchema = z.object({
       starts_at: date,
       ends_at: date,
       revoked_at: nullableDate,
+      reason: z.string().nullable(),
+      created_by: z.uuid().nullable(),
     }),
   ),
   referrals: z.array(
@@ -238,17 +315,6 @@ export const adminUserDetailSchema = z.object({
       attributed_at: date,
     }),
   ),
-  audit: z.array(
-    z.object({
-      id: z.string(),
-      actor_id: z.uuid().nullable(),
-      action: z.string(),
-      target_id: z.string(),
-      reason: z.string(),
-      result: z.string(),
-      request_id: z.string(),
-      created_at: date,
-    }),
-  ),
+  audit: z.array(auditEntrySchema),
   auditReads: z.object({ count: integer, lastAt: nullableDate }),
 });

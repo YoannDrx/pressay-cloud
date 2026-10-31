@@ -181,7 +181,7 @@ export async function customerDetail(
       [id],
     ),
     sql.query(
-      'SELECT id,source,starts_at,ends_at,revoked_at FROM access_grant WHERE account_id=$1 ORDER BY created_at DESC',
+      'SELECT id,source,starts_at,ends_at,revoked_at,reason,created_by FROM access_grant WHERE account_id=$1 ORDER BY created_at DESC',
       [id],
     ),
     sql.query(
@@ -189,15 +189,19 @@ export async function customerDetail(
       [id],
     ),
   ]);
-  // operations_audit.target_id is free text: entries target the account itself
-  // or one of its grants. Reads are counted, not listed, to keep actions visible.
+  // Entries name their account since migration 0024; older ones target the
+  // account or one of its grants by id as text. Reads are counted, not
+  // listed, to keep actions visible.
   const targets = [id, ...grants.map((grant) => String(grant.id))];
   const [audit, reads] = await Promise.all([
     sql.query(
-      `SELECT id::text AS id,actor_id,action,target_id,reason,result,request_id,created_at
-      FROM operations_audit WHERE target_id=ANY($1::text[]) AND reason<>'personal_data_read'
+      `SELECT id::text AS id,actor_id,action,target_id,target_account_id,reason,result,
+        request_id,details,created_at
+      FROM operations_audit
+      WHERE (target_id=ANY($1::text[]) OR target_account_id=$2::uuid)
+        AND reason<>'personal_data_read'
       ORDER BY id DESC LIMIT 50`,
-      [targets],
+      [targets, id],
     ),
     sql.query(
       `SELECT count(*)::int AS count,max(created_at) AS last_at

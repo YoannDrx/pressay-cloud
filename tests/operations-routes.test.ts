@@ -120,6 +120,8 @@ describe('Cloud administrative authorization', () => {
     '/v1/admin/referrals',
     '/v1/admin/users/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970',
     '/v1/admin/users/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970?include=identity',
+    '/v1/admin/audit-log',
+    '/v1/admin/audit-log?action=grant&reads=exclude',
   ])('requires a recent second factor to read personal data at %s', async (path) => {
     const response = await app.request(path, {
       headers: { authorization: `Bearer ${await token({ pressay_step_up_at: 0 })}` },
@@ -128,6 +130,63 @@ describe('Cloud administrative authorization', () => {
     expect(await response.json()).toMatchObject({
       error: { code: 'step_up_required' },
     });
+    expect(query).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['/v1/admin/users/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970/grants', { days: 30 }],
+    ['/v1/admin/grants/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970/extend', { days: 30 }],
+    ['/v1/admin/devices/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970/revoke', {}],
+    ['/v1/admin/devices/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970/restore', {}],
+    ['/v1/admin/users/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970/deletion', {}],
+    [
+      '/v1/admin/audit/external',
+      {
+        action: 'user.sessions.revoke',
+        targetAccountId: 'aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970',
+        result: 'requested',
+      },
+    ],
+  ])(
+    'requires a recent second factor for the support action %s',
+    async (path, extra) => {
+      const response = await app.request(path, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${await token({ pressay_step_up_at: 0 })}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          idempotencyKey: 'aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970',
+          reason: 'Support ticket',
+          ...extra,
+        }),
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        error: { code: 'step_up_required' },
+      });
+      expect(query).not.toHaveBeenCalled();
+      expect(audit).not.toHaveBeenCalled();
+      expect(consume).not.toHaveBeenCalled();
+    },
+  );
+  it('refuses a support action without a reason before any change', async () => {
+    const response = await app.request(
+      '/v1/admin/users/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970/grants',
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${await token()}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          idempotencyKey: 'aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970',
+          days: 30,
+        }),
+      },
+    );
+    expect(response.status).toBe(422);
     expect(query).not.toHaveBeenCalled();
     expect(audit).not.toHaveBeenCalled();
   });
@@ -143,6 +202,8 @@ describe('Cloud administrative authorization', () => {
       'users',
       'personal_data_read',
       expect.any(String),
+      'succeeded',
+      { targetAccountId: null },
     );
     expect(JSON.stringify(audit.mock.calls)).not.toContain('someone');
     expect(consume).not.toHaveBeenCalled();

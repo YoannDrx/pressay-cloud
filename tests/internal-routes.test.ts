@@ -32,6 +32,7 @@ describe('internal operational routes', () => {
     cleanupExpiredRateLimitBuckets.mockResolvedValue(12);
     purgeExpiredRecords.mockResolvedValue({
       idempotencyRecords: 3,
+      operationsRequests: 2,
       usageReservations: 0,
       providerEvents: 1,
       legacySessions: 0,
@@ -58,6 +59,7 @@ describe('internal operational routes', () => {
       rateLimitBucketsDeleted: 12,
       purged: {
         idempotencyRecords: 3,
+        operationsRequests: 2,
         usageReservations: 0,
         providerEvents: 1,
         legacySessions: 0,
