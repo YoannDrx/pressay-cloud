@@ -16,6 +16,7 @@ import { cloudRoutes } from './routes/cloud.js';
 import { desktopAuthRoutes } from './routes/desktop-auth.js';
 import { downloadRoutes } from './routes/downloads.js';
 import { syncRoutes } from './routes/sync.js';
+import { waitlistRoutes } from './routes/waitlist.js';
 import type { AppEnvironment } from './types.js';
 
 const app = new Hono<AppEnvironment>();
@@ -66,6 +67,7 @@ app.route('/v1', cloudRoutes);
 app.route('/v1', desktopAuthRoutes);
 app.route('/v1', downloadRoutes);
 app.route('/v1', syncRoutes);
+app.route('/v1', waitlistRoutes);
 
 app.notFound((context) =>
   context.json(

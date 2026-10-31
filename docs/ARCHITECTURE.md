@@ -265,7 +265,28 @@ over 7 and 30 days.
 | Retired Cloud sessions and verifications                       | Until expiry                                                                | Daily purge             |
 | Deletion tombstone (`auth_user_id`)                            | Kept to prevent re-attribution                                              | Kept                    |
 | Anonymous download events (`download_event`, no personal data) | Kept as aggregate statistics                                                | Kept                    |
+| Waitlist entries (`waitlist_entry`)                            | 730 days after consent (`PRESSAY_RETENTION_WAITLIST_DAYS`)                  | Daily purge             |
+| Unsubscribed waitlist entries                                  | 30 days after unsubscribing                                                 | Daily purge             |
 
 `GET /v1/me/export` returns the caller's data as JSON (account, contact,
 devices, entitlement, subscriptions, payments, consents, usage, grants, referral
 data, sync volume) without hashes, keys or provider identifiers.
+
+## Platform waitlists
+
+`POST /v1/waitlist` (public) records `{email, platform: ios|windows, locale:
+fr|en, source, consent: true}` in `waitlist_entry`: the address, platform,
+language, source and consent time only, never an IP address or user agent.
+The answer is always `202 {"status":"registered"}`, whether the address is
+new, already listed or had unsubscribed (which renews its consent), so the
+route cannot be used to test addresses. Five sign-ups per visitor address and
+minute: the site relays sign-ups from its server and vouches for the visitor's
+address with a five-minute token signed by its Better Auth keys (audience
+`pressay-waitlist`, `token_use: pressay_waitlist`); the address is only hashed
+into a rate-limit bucket. An invalid token is refused.
+
+`GET /v1/admin/waitlist` returns counters per platform (subscribed,
+unsubscribed, per language, last 7 days) and per source.
+`GET /v1/admin/waitlist/export?platform=` returns the subscribed entries of a
+platform as CSV (formula prefixes neutralised) after a step-up, audited as
+`admin.waitlist.export`. Unsubscription arrives with transactional email.

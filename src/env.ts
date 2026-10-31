@@ -108,6 +108,13 @@ const environmentSchema = z
       .min(90)
       .max(3650)
       .default(400),
+    // Waitlist entries are deleted this long after their consent.
+    PRESSAY_RETENTION_WAITLIST_DAYS: z.coerce
+      .number()
+      .int()
+      .min(30)
+      .max(1095)
+      .default(730),
     // App Review and TestFlight purchase in the Apple Sandbox against the
     // production API, so production keeps verifying Sandbox payloads. In
     // production a Sandbox purchase grants Pro only to the Pressay account IDs

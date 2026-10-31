@@ -159,6 +159,7 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
         providerEvents: 1,
         legacySessions: 1,
         legacyVerifications: 0,
+        waitlistEntries: 0,
       });
       expect(await run('SELECT target_id FROM operations_request')).toEqual([
         { target_id: 'new' },

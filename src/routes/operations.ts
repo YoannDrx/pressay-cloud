@@ -43,6 +43,8 @@ import {
   requireReferrals,
 } from '../services/referrals.js';
 import { consume } from '../services/rate-limits.js';
+import { waitlistExportQuerySchema } from '../contracts/waitlist.js';
+import { waitlistCsv, waitlistSummary } from '../services/waitlist.js';
 import {
   campaignSchema,
   claimSchema,
@@ -457,6 +459,22 @@ operationsRoutes.patch('/admin/gates/:channel/:id', async (c) => {
     c.get('requestId'),
   );
   return c.json({ updated: true });
+});
+// Waitlist counters carry no address; the export is a personal-data read.
+operationsRoutes.get('/admin/waitlist', async (c) => c.json(await waitlistSummary()));
+operationsRoutes.get('/admin/waitlist/export', async (c) => {
+  requireRecentStepUp(c.get('authSessionId'), c.get('authStepUpAt'));
+  const query = waitlistExportQuerySchema.safeParse(c.req.query());
+  if (!query.success) throw new ApiError(422, 'invalid_query', 'Choose a platform');
+  const { csv, rows } = await waitlistCsv(query.data.platform);
+  await auditRead(c, 'admin.waitlist.export', `waitlist/${query.data.platform}`);
+  c.header('Content-Type', 'text/csv; charset=utf-8');
+  c.header(
+    'Content-Disposition',
+    `attachment; filename="pressay-waitlist-${query.data.platform}.csv"`,
+  );
+  c.header('X-Waitlist-Rows', String(rows));
+  return c.body(csv);
 });
 operationsRoutes.get('/referrals/me', async (c) =>
   c.json(await myReferrals(c.get('operationsAccountId'))),

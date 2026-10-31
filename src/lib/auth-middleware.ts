@@ -261,6 +261,50 @@ export const requireDownloadEventToken = createMiddleware<AppEnvironment>(
   },
 );
 
+const WAITLIST_AUDIENCE = 'pressay-waitlist';
+const WAITLIST_TOKEN_USE = 'pressay_waitlist';
+
+/**
+ * The public site relays waitlist sign-ups from its server, so the Cloud sees
+ * the site's address. The site may vouch for the visitor's address with a
+ * short-lived token signed by its Better Auth keys (waitlist audience only);
+ * that address is used only as a rate-limit key, hashed, never stored.
+ * Without a token the connection address is used; a bad token is refused.
+ */
+export async function waitlistClientAddress(
+  authorization: string | undefined,
+  requestId: string,
+): Promise<string | null> {
+  if (!authorization) return null;
+  const match = /^Bearer\s+([A-Za-z0-9._~+/=-]+)$/.exec(authorization);
+  const environment = getEnvironment();
+  const issuer = environment.PRESSAY_BETTER_AUTH_JWT_ISSUER;
+  const jwksUrl = environment.PRESSAY_BETTER_AUTH_JWKS_URL;
+  try {
+    if (!match?.[1]) throw new BearerRejected('malformed');
+    if (!issuer || !jwksUrl) throw new BearerRejected('bad_issuer');
+    const { payload } = await jwtVerify(match[1], remoteKeySet(jwksUrl), {
+      algorithms: ['EdDSA', 'ES256', 'ES512', 'RS256', 'PS256'],
+      issuer: issuerVariants(issuer),
+      audience: WAITLIST_AUDIENCE,
+      maxTokenAge: '5m',
+    });
+    if (payload.token_use !== WAITLIST_TOKEN_USE)
+      throw new BearerRejected('invalid_token_use');
+    const address = payload.client_address;
+    return typeof address === 'string' && address.length >= 1 && address.length <= 64
+      ? address
+      : 'unknown';
+  } catch (error) {
+    const reason = classifyJwtError(error);
+    writeLog('warn', 'auth.waitlist_token_rejected', {
+      reason,
+      request_id: requestId,
+    });
+    throw unauthorized(reason);
+  }
+}
+
 export const requireAuthentication = createMiddleware<AppEnvironment>(
   async (context, next) => {
     const authorization = context.req.header('Authorization');
