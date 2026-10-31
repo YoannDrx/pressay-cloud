@@ -122,7 +122,14 @@ subscription keeps Pro for `STRIPE_PAST_DUE_GRACE_DAYS` from the period start at
 most. A full refund or a lost dispute cancels the Stripe subscription
 immediately; a won dispute restores Stripe's current state. Checkout refuses a
 second live subscription (Stripe or App Store, 409), and a concurrent App Store
-activation is flagged `duplicate_subscription_stripe_active` for support. Stripe
+activation is flagged `duplicate_subscription_stripe_active` for support.
+Checkout creation is serialized per account by a 90-second lease
+(`billing_checkout_lease`; a concurrent request gets 409 `checkout_in_progress`).
+Under the lease the service asks Stripe itself: an `active`, `trialing`,
+`past_due` or `unpaid` subscription for the customer refuses with 409
+`subscription_already_active` even before its webhook arrives, an open session
+for the same Price is reused, and any other open session is expired before a
+new one is created. Stripe
 Tax is behind `STRIPE_AUTOMATIC_TAX_ENABLED`; catalogue prices are tax-inclusive.
 
 ## Account deletion
@@ -145,6 +152,7 @@ any failure is retried with backoff.
 | Financial ledger (`billing_financial_event`) and its events    | Accounting obligation (10 years in France)                                  | Kept                    |
 | `operations_audit`                                             | Kept for accountability                                                     | Kept                    |
 | Rate-limit buckets                                             | Until window expiry                                                         | Daily purge             |
+| Checkout leases (`billing_checkout_lease`)                     | Until the Checkout request ends; an abandoned lease is inert after 90 s     | Deleted by the request  |
 | Retired Cloud sessions and verifications                       | Until expiry                                                                | Daily purge             |
 | Deletion tombstone (`auth_user_id`)                            | Kept to prevent re-attribution                                              | Kept                    |
 | Anonymous download events (`download_event`, no personal data) | Kept as aggregate statistics                                                | Kept                    |
