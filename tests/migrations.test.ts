@@ -135,4 +135,33 @@ describe('database migrations', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS currency text');
     expect(migration).not.toMatch(/^\s*(UPDATE|DELETE|DROP)\b/m);
   });
+
+  it('records subscription status changes with a replayable trigger and no personal data', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0028_subscription_transitions.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain(
+      'CREATE TABLE IF NOT EXISTS billing_subscription_transition',
+    );
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION record_pressay_subscription_transition()',
+    );
+    expect(migration).toContain(
+      'DROP TRIGGER IF EXISTS billing_subscription_transition_trigger',
+    );
+    expect(migration).toContain(
+      'AFTER INSERT OR UPDATE OF status ON billing_subscription',
+    );
+    expect(migration).toContain(
+      'REFERENCES billing_subscription (id) ON DELETE CASCADE',
+    );
+    expect(migration).toContain('WHERE NOT EXISTS');
+    expect(migration).not.toMatch(/^\s*CREATE (TABLE|INDEX) (?!IF NOT EXISTS)/m);
+    expect(migration).not.toMatch(/^\s*CREATE FUNCTION /m);
+    expect(migration).not.toMatch(/^\s*(UPDATE|DELETE|DROP TABLE|ALTER TABLE)\b/m);
+    for (const column of ['email', 'amount_minor', 'provider_subscription_id'])
+      expect(migration).not.toContain(column);
+  });
 });

@@ -288,3 +288,49 @@ export interface AdminMetrics {
   }[];
   generatedAt: string;
 }
+/**
+ * Churn, conversion by sign-up cohort, trials and download breakdowns.
+ * Months are UTC calendar months (`YYYY-MM`), oldest first, current last.
+ * Statuses come from the subscription history, which starts at
+ * `historyStartedAt`; earlier months only know the status at that date.
+ */
+export interface AdminAdvancedMetrics {
+  months: number;
+  days: number;
+  historyStartedAt: string | null;
+  churn: {
+    month: string;
+    /** Production subscriptions paying when the month started. */
+    paying_start: number;
+    /** Became paying during the month (first payment, trial converted, back). */
+    new_paying: number;
+    /** Stopped paying during the month (canceled, expired, refunded, paused). */
+    churned: number;
+  }[];
+  cohorts: {
+    month: string;
+    signups: number;
+    /** Accounts of the cohort that ever paid. */
+    converted: number;
+    /** Paid within 30 days of signing up. */
+    converted_30d: number;
+    /** Accounts of the cohort that started a trial. */
+    trials: number;
+  }[];
+  trials: {
+    month: string;
+    started: number;
+    converted: number;
+    ended: number;
+    running: number;
+  }[];
+  downloads: {
+    platforms: { platform: string; count: number }[];
+    versions: { platform: string; app_version: string; count: number }[];
+    sources: { source: string; count: number }[];
+    campaigns: { campaign: string; count: number }[];
+  };
+  generatedAt: string;
+}
+export type MetricExportDataset =
+  'churn' | 'cohorts' | 'trials' | 'downloads' | 'signups';

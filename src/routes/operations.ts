@@ -12,6 +12,7 @@ import { bootstrapWebAccount, recordAccountContact } from '../services/accounts.
 import { customerDetail, searchAccounts } from '../services/admin-customers.js';
 import { exportAccountDataForSupport } from '../services/data-export.js';
 import { adminMetrics } from '../services/admin-metrics.js';
+import { advancedMetrics, metricExport } from '../services/admin-analytics.js';
 import {
   billingAlerts,
   financialEvents,
@@ -60,6 +61,9 @@ import {
   supportGrantSchema,
   financialEventQuerySchema,
   providerEventQuerySchema,
+  advancedMetricsQuerySchema,
+  metricExportDatasets,
+  metricExportQuerySchemas,
 } from '../contracts/operations.js';
 
 export const operationsRoutes = new Hono<AppEnvironment>();
@@ -429,6 +433,40 @@ operationsRoutes.post('/admin/billing/events/:provider/:id/replay', async (c) =>
 });
 operationsRoutes.get('/admin/alerts', async (c) => c.json(await billingAlerts()));
 operationsRoutes.get('/admin/metrics', async (c) => c.json(await adminMetrics()));
+operationsRoutes.get('/admin/metrics/advanced', async (c) => {
+  const parsed = advancedMetricsQuerySchema.safeParse(c.req.query());
+  if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
+  return c.json(await advancedMetrics(parsed.data));
+});
+// CSV of one aggregate dataset. Aggregates only, but an export leaves the
+// administration: it needs the step-up, is rate limited and audited.
+operationsRoutes.get('/admin/export/:file', async (c) => {
+  requireRecentStepUp(c.get('authSessionId'), c.get('authStepUpAt'));
+  const name = /^([a-z]{1,20})\.csv$/.exec(c.req.param('file'))?.[1];
+  const dataset = metricExportDatasets.find((candidate) => candidate === name);
+  if (!dataset) throw new ApiError(404, 'export_not_found', 'Unknown export');
+  const query = metricExportQuerySchemas[dataset].safeParse(c.req.query());
+  if (!query.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
+  await consume('admin_export', c.get('operationsAccountId'), 10);
+  const { csv, rows } = await metricExport(dataset, query.data);
+  await audit(
+    c.get('operationsAccountId'),
+    'admin.export',
+    `export/${dataset}`,
+    'data_export',
+    c.get('requestId'),
+    'succeeded',
+    { details: { dataset, rows, ...query.data } },
+  );
+  c.header('Content-Type', 'text/csv; charset=utf-8');
+  c.header(
+    'Content-Disposition',
+    `attachment; filename="pressay-${dataset}-${new Date().toISOString().slice(0, 10)}.csv"`,
+  );
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Export-Rows', String(rows));
+  return c.body(csv);
+});
 operationsRoutes.get('/admin/audit-log', async (c) => {
   const parsed = auditQuerySchema.safeParse(c.req.query());
   if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
