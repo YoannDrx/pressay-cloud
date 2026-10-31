@@ -1,4 +1,5 @@
 import { getSql } from '../db/client.js';
+import { csvField } from '../lib/csv.js';
 import {
   adminWaitlistSchema,
   waitlistPlatforms,
@@ -54,11 +55,7 @@ export async function waitlistSummary(): Promise<AdminWaitlist> {
   return adminWaitlistSchema.parse({ platforms, sources });
 }
 
-/** A CSV field, quoted, with formula prefixes neutralised for spreadsheets. */
-export function csvField(value: string): string {
-  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return `"${safe.replaceAll('"', '""')}"`;
-}
+export { csvField };
 
 /** Subscribed entries of one platform, oldest first, as CSV. */
 export async function waitlistCsv(

@@ -17,6 +17,9 @@ Stripe and App Store subscriptions are normalized in `billing_subscription`.
 overwriting newer state. `entitlement` is the materialized server decision used
 to sign a short-lived desktop snapshot. Price identifiers live in
 `billing_product` and are never accepted from clients.
+`billing_subscription_transition` keeps every status change of a subscription
+(trigger-written, statuses and dates only) for churn, conversion and trial
+metrics.
 
 The staging Stripe catalogue is configured with `bun run billing:configure`
 from environment-owned product and price IDs. Current test-mode values are

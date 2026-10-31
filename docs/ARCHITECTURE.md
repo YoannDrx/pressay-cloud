@@ -249,11 +249,43 @@ a non-revoked device seen in 7 and 30 days; active grants by origin; invoices
 paid and refunds this month per currency; downloads per platform and version
 over 7 and 30 days.
 
+## Advanced metrics and exports
+
+`billing_subscription_transition` (migration 0028) is the status history of
+each subscription: a trigger on `billing_subscription` writes a row on creation
+and on every status change (Stripe, App Store, the invoice path that moves a
+subscription to `past_due`, replays), with the provider event time. Rows hold
+statuses and dates only and are erased with the subscription when the account
+is deleted. Subscriptions that existed before 0028 got one backfilled row with
+their status at their last provider event.
+
+`GET /v1/admin/metrics/advanced?months=1..24&days=1..366` (aggregates, no
+step-up), Production only:
+
+- churn per UTC month: subscriptions paying (`active`, `past_due`, `grace`)
+  when the month starts, those that became paying during it, those that
+  stopped paying (to `canceled`, `expired`, `refunded` or `paused`);
+- conversion by sign-up cohort: accounts created in the month, those that ever
+  paid (a paying status or a paid Stripe invoice with an amount) and those that
+  paid within 30 days, and those that started a trial;
+- trials by start month: converted, ended without paying, still running;
+- downloads over `days` by platform, version, source and campaign.
+
+`GET /v1/admin/export/{churn,cohorts,trials,downloads,signups}.csv` returns the
+same aggregates (downloads and sign-ups per UTC day) as CSV. Each export needs
+the step-up, accepts only its own parameter (`months` or `days`, anything else
+is refused), is limited to ten per minute per administrator and is written to
+`operations_audit` as `admin.export` (reason `data_export`, details: dataset,
+row count, range). Every cell is quoted and a value starting with `=`, `+`,
+`-`, `@`, tab or carriage return is prefixed with `'` so spreadsheets never
+evaluate it (download sources and campaigns come from public URLs).
+
 ## Retention matrix
 
 | Data                                                           | Retention                                                                   | Mechanism               |
 | -------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------- |
 | Account, devices, entitlement, usage counters, sync ciphertext | Until account deletion                                                      | Cascade on deletion job |
+| Status history (`billing_subscription_transition`)             | Until account deletion, with the subscription                               | Cascade on deletion job |
 | Idempotency records                                            | 30 days after creation, once expired (`PRESSAY_RETENTION_IDEMPOTENCY_DAYS`) | Daily purge             |
 | Administrative idempotency keys (`operations_request`)         | 30 days after creation (`PRESSAY_RETENTION_IDEMPOTENCY_DAYS`)               | Daily purge             |
 | Settled usage reservations                                     | 395 days (`PRESSAY_RETENTION_USAGE_RESERVATION_DAYS`)                       | Daily purge             |

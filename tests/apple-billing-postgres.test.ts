@@ -57,6 +57,7 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
         '0019_billing_hardening.sql',
         '0025_provider_event_account.sql',
         '0026_subscription_price.sql',
+        '0028_subscription_transitions.sql',
       ]) {
         await client.query(
           await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'),
@@ -177,6 +178,18 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
       );
       await restore(Environment.SANDBOX, Status.REVOKED);
       expect((await entitlement()).tier).toBe('pro');
+      // applyAppleSubscription changes are recorded in the subscription history.
+      expect(
+        (
+          await client.query(
+            'SELECT environment, from_status, to_status FROM billing_subscription_transition ORDER BY id',
+          )
+        ).rows,
+      ).toEqual([
+        { environment: 'Sandbox', from_status: null, to_status: 'active' },
+        { environment: 'Production', from_status: null, to_status: 'active' },
+        { environment: 'Sandbox', from_status: 'active', to_status: 'refunded' },
+      ]);
       expect((await client.query('SELECT * FROM billing_subscription')).rowCount).toBe(
         2,
       );
@@ -330,6 +343,21 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
         ).rows,
       ).toEqual([{ amount_minor: 799, currency: 'eur' }]);
       expect(await deliver(event)).toEqual({ duplicateOrIgnored: true });
+      // applyStripeSubscription recorded one transition; the duplicate none.
+      expect(
+        (
+          await client.query(
+            'SELECT provider, from_status, to_status, occurred_at FROM billing_subscription_transition',
+          )
+        ).rows,
+      ).toEqual([
+        {
+          provider: 'stripe',
+          from_status: null,
+          to_status: 'active',
+          occurred_at: new Date(created * 1000),
+        },
+      ]);
       expect(
         await deliver({
           id: 'evt_refund',

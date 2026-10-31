@@ -424,3 +424,71 @@ export const adminUserDetailSchema = z.object({
   auditReads: z.object({ count: integer, lastAt: nullableDate }),
   providerEvents: adminProviderEventsSchema.shape.events,
 });
+/** Months of history for churn, cohorts and trials (current month included). */
+const metricMonths = z.coerce.number().int().min(1).max(24).default(12);
+/** Days of history for daily aggregates (downloads, sign-ups). */
+const metricDays = z.coerce.number().int().min(1).max(366).default(30);
+export const advancedMetricsQuerySchema = z.strictObject({
+  months: metricMonths,
+  days: metricDays,
+});
+export const metricExportDatasets = [
+  'churn',
+  'cohorts',
+  'trials',
+  'downloads',
+  'signups',
+] as const;
+/** Strict per-dataset query: an unknown or misplaced parameter is refused. */
+export const metricExportQuerySchemas = {
+  churn: z.strictObject({ months: metricMonths }),
+  cohorts: z.strictObject({ months: metricMonths }),
+  trials: z.strictObject({ months: metricMonths }),
+  downloads: z.strictObject({ days: metricDays }),
+  signups: z.strictObject({ days: metricDays }),
+} as const;
+const monthKey = z.string().regex(/^\d{4}-\d{2}$/);
+const count = z.coerce.number().int().nonnegative();
+export const adminAdvancedMetricsSchema = z.object({
+  months: count,
+  days: count,
+  historyStartedAt: z.coerce
+    .date()
+    .transform((d) => d.toISOString())
+    .nullable(),
+  churn: z.array(
+    z.object({
+      month: monthKey,
+      paying_start: count,
+      new_paying: count,
+      churned: count,
+    }),
+  ),
+  cohorts: z.array(
+    z.object({
+      month: monthKey,
+      signups: count,
+      converted: count,
+      converted_30d: count,
+      trials: count,
+    }),
+  ),
+  trials: z.array(
+    z.object({
+      month: monthKey,
+      started: count,
+      converted: count,
+      ended: count,
+      running: count,
+    }),
+  ),
+  downloads: z.object({
+    platforms: z.array(z.object({ platform: z.string(), count })),
+    versions: z.array(
+      z.object({ platform: z.string(), app_version: z.string(), count }),
+    ),
+    sources: z.array(z.object({ source: z.string(), count })),
+    campaigns: z.array(z.object({ campaign: z.string(), count })),
+  }),
+  generatedAt: z.string(),
+});
