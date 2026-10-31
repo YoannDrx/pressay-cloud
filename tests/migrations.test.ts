@@ -17,6 +17,25 @@ describe('database migrations', () => {
     );
   });
 
+  it('moves the single owner into members with roles, keeping the old table for running code', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0030_operations_members.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS operations_member');
+    expect(migration).toContain("CHECK (role IN ('owner', 'support', 'readonly'))");
+    expect(migration).toContain("SELECT account_id, 'owner' FROM operations_owner");
+    expect(migration).toContain('ON CONFLICT (account_id) DO NOTHING');
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION set_pressay_operations_member',
+    );
+    expect(migration).toContain("MESSAGE = 'last_owner'");
+    expect(migration).not.toMatch(/^\s*CREATE (TABLE|INDEX) (?!IF NOT EXISTS)/m);
+    expect(migration).not.toMatch(/^\s*CREATE FUNCTION /m);
+    expect(migration).not.toMatch(/DROP TABLE|ALTER TABLE operations_owner/);
+  });
+
   it('stores financial lifecycle metadata without raw provider payloads', async () => {
     const migration = await readFile(
       new URL('../migrations/0013_billing_financial_events.sql', import.meta.url),
@@ -134,24 +153,5 @@ describe('database migrations', () => {
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS amount_minor integer');
     expect(migration).toContain('ADD COLUMN IF NOT EXISTS currency text');
     expect(migration).not.toMatch(/^\s*(UPDATE|DELETE|DROP)\b/m);
-  });
-
-  it('moves the single owner into members with roles, keeping the old table for running code', async () => {
-    const migration = await readFile(
-      new URL('../migrations/0030_operations_members.sql', import.meta.url),
-      'utf8',
-    );
-
-    expect(migration).toContain('CREATE TABLE IF NOT EXISTS operations_member');
-    expect(migration).toContain("CHECK (role IN ('owner', 'support', 'readonly'))");
-    expect(migration).toContain("SELECT account_id, 'owner' FROM operations_owner");
-    expect(migration).toContain('ON CONFLICT (account_id) DO NOTHING');
-    expect(migration).toContain(
-      'CREATE OR REPLACE FUNCTION set_pressay_operations_member',
-    );
-    expect(migration).toContain("MESSAGE = 'last_owner'");
-    expect(migration).not.toMatch(/^\s*CREATE (TABLE|INDEX) (?!IF NOT EXISTS)/m);
-    expect(migration).not.toMatch(/^\s*CREATE FUNCTION /m);
-    expect(migration).not.toMatch(/DROP TABLE|ALTER TABLE operations_owner/);
   });
 });

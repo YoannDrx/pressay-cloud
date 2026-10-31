@@ -46,6 +46,7 @@ import { consume } from '../services/rate-limits.js';
 import { accountByEmail, listMembers, setMember } from '../services/admin-members.js';
 import { alertMemberChange } from '../services/ops-alert.js';
 import { requiredRole, roleAllows } from '../lib/admin-roles.js';
+import { memberAddSchema, memberRoleChangeSchema } from '../contracts/operations.js';
 import { waitlistExportQuerySchema } from '../contracts/waitlist.js';
 import { waitlistCsv, waitlistSummary } from '../services/waitlist.js';
 import {
@@ -62,8 +63,6 @@ import {
   supportGrantSchema,
   financialEventQuerySchema,
   providerEventQuerySchema,
-  memberAddSchema,
-  memberRoleChangeSchema,
 } from '../contracts/operations.js';
 
 export const operationsRoutes = new Hono<AppEnvironment>();
