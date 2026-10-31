@@ -217,6 +217,36 @@ export interface ExternalAuditRecorded {
   recorded: true;
   authUserId: string;
 }
+/**
+ * Administrator roles: `owner` (everything), `support` (support actions,
+ * no billing, no roles), `readonly` (reads only).
+ */
+export type OperationsRole = 'owner' | 'support' | 'readonly';
+export interface AdminSession {
+  role: OperationsRole;
+  accountId?: string;
+}
+export interface AdminMember {
+  accountId: string;
+  /** Web identity subject, to show whether the member has an Authenticator app. */
+  authUserId: string;
+  email: string | null;
+  role: OperationsRole;
+  addedBy: string | null;
+  addedByEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface AdminMembers {
+  members: AdminMember[];
+}
+export interface MemberChangeResult {
+  accountId: string;
+  previousRole: OperationsRole | null;
+  role: OperationsRole | null;
+  changed: boolean;
+  replayed: boolean;
+}
 export interface AdminFinancialEvents {
   events: (AdminFinancialEvent & {
     account_id: string | null;

@@ -60,6 +60,36 @@ export const adminDeletionSchema = supportActionSchema.extend({
     .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
     .default(false),
 });
+export const memberRoleSchema = z.enum(['owner', 'support', 'readonly']);
+/** Add an administrator by the verified address of an existing account. */
+export const memberAddSchema = supportActionSchema.extend({
+  email: z.email().transform((value) => value.toLowerCase()),
+  role: memberRoleSchema,
+});
+export const memberRoleChangeSchema = supportActionSchema.extend({
+  role: memberRoleSchema,
+});
+export const memberChangeResultSchema = z.object({
+  accountId: z.uuid(),
+  previousRole: memberRoleSchema.nullable(),
+  role: memberRoleSchema.nullable(),
+  changed: z.boolean(),
+  replayed: z.boolean().default(false),
+});
+export const adminMembersSchema = z.object({
+  members: z.array(
+    z.object({
+      accountId: z.uuid(),
+      authUserId: z.string(),
+      email: z.string().nullable(),
+      role: memberRoleSchema,
+      addedBy: z.uuid().nullable(),
+      addedByEmail: z.string().nullable(),
+      createdAt: z.coerce.date().transform((d) => d.toISOString()),
+      updatedAt: z.coerce.date().transform((d) => d.toISOString()),
+    }),
+  ),
+});
 const auditCount = z.number().int().min(0).max(100000);
 /** Actions performed by the web on its own database, recorded by the Cloud. */
 export const externalAuditSchema = supportActionSchema.extend({

@@ -59,6 +59,7 @@ describe('bearer token verification', () => {
         pressay_step_up_method: 'totp',
         pressay_step_up_at: Math.floor(Date.now() / 1000),
         pressay_auth_at: Math.floor(Date.now() / 1000),
+        pressay_two_factor: true,
       }),
     );
     expect(identity).toMatchObject({
@@ -66,6 +67,7 @@ describe('bearer token verification', () => {
       webProxy: false,
       stepUpAt: 0,
       signedInAt: 0,
+      twoFactor: false,
     });
   });
 
@@ -145,6 +147,27 @@ describe('bearer token verification', () => {
       ),
     );
     expect(ignored).toMatchObject({ webProxy: true, signedInAt: 0 });
+  });
+
+  it('reads the Authenticator flag only from web proxy tokens, as a strict boolean', async () => {
+    const proxy = await verifyBearerToken(
+      await externalAccessToken(
+        {
+          token_use: 'pressay_web_proxy',
+          sid: 'web-session',
+          pressay_two_factor: true,
+        },
+        { audience: 'pressay-web-proxy' },
+      ),
+    );
+    expect(proxy).toMatchObject({ webProxy: true, twoFactor: true });
+    const loose = await verifyBearerToken(
+      await externalAccessToken(
+        { token_use: 'pressay_web_proxy', pressay_two_factor: 'true' },
+        { audience: 'pressay-web-proxy' },
+      ),
+    );
+    expect(loose).toMatchObject({ webProxy: true, twoFactor: false });
   });
 
   it('rejects a proxy-audience token that does not declare proxy use', async () => {

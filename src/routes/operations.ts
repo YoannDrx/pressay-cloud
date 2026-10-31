@@ -31,7 +31,7 @@ import {
 import {
   accountId,
   audit,
-  ownerAccount,
+  operationsMember,
   createCampaign,
   revokeCampaign,
   claimAccess,
@@ -43,6 +43,9 @@ import {
   requireReferrals,
 } from '../services/referrals.js';
 import { consume } from '../services/rate-limits.js';
+import { accountByEmail, listMembers, setMember } from '../services/admin-members.js';
+import { alertMemberChange } from '../services/ops-alert.js';
+import { requiredRole, roleAllows } from '../lib/admin-roles.js';
 import { waitlistExportQuerySchema } from '../contracts/waitlist.js';
 import { waitlistCsv, waitlistSummary } from '../services/waitlist.js';
 import {
@@ -59,6 +62,8 @@ import {
   supportGrantSchema,
   financialEventQuerySchema,
   providerEventQuerySchema,
+  memberAddSchema,
+  memberRoleChangeSchema,
 } from '../contracts/operations.js';
 
 export const operationsRoutes = new Hono<AppEnvironment>();
@@ -74,19 +79,67 @@ operationsRoutes.use('/admin/*', async (c, next) => {
     throw new ApiError(403, 'verified_email_required', 'Verify your email');
   await bootstrapWebAccount(c.get('authUserId'));
   await recordAccountContact(c.get('authUserId'), c.get('authEmail'));
-  const owner = await ownerAccount(c.get('authUserId'), c.get('authEmail'), true);
-  if (!owner)
+  const member = await operationsMember(
+    c.get('authUserId'),
+    c.get('authEmail'),
+    true,
+    c.get('authTwoFactor'),
+  );
+  if (!member)
     throw new ApiError(403, 'admin_required', 'Administrator access required');
-  c.set('operationsAccountId', owner);
+  // Every administrator needs an Authenticator app on their web account,
+  // even for reads that do not ask for the ten-minute step-up.
+  if (!c.get('authTwoFactor'))
+    throw new ApiError(
+      403,
+      'two_factor_required',
+      'Set up an Authenticator app to use the administration',
+    );
+  c.set('operationsAccountId', member.accountId);
+  c.set('operationsRole', member.role);
+  if (member.claimed) {
+    await audit(
+      member.accountId,
+      'member.owner.claimed',
+      member.accountId,
+      'listed_owner_address',
+      c.get('requestId'),
+      'succeeded',
+      { targetAccountId: member.accountId, details: { role: 'owner' } },
+    );
+    await alertMemberChange({
+      event: 'operations_member.owner_claimed',
+      accountId: member.accountId,
+      actorAccountId: member.accountId,
+      previousRole: null,
+      role: 'owner',
+      requestId: c.get('requestId'),
+    });
+  }
+  if (!roleAllows(member.role, requiredRole(c.req.method, c.req.path)))
+    throw new ApiError(
+      403,
+      'role_forbidden',
+      'Your administrator role does not allow this',
+    );
   const mutation = c.req.method !== 'GET';
   if (mutation || personalDataRead(c.req.path))
     requireRecentStepUp(c.get('authSessionId'), c.get('authStepUpAt'));
-  if (mutation) await consume('admin_mutation', owner, 20);
+  if (mutation) await consume('admin_mutation', member.accountId, 20);
   await next();
 });
+/** Stripe promotions are billing: owners only, whatever route creates them. */
+function requireOwner(c: Context<AppEnvironment>): void {
+  if (c.get('operationsRole') !== 'owner')
+    throw new ApiError(
+      403,
+      'role_forbidden',
+      'Your administrator role does not allow this',
+    );
+}
 /** Admin reads that return emails, a person's full record or the audit ledger. */
 function personalDataRead(path: string): boolean {
-  return /\/admin\/(users(\/[^/]+)?|referrals|audit-log|billing\/financial-events)\/?$/.test(
+  return /\/admin\/(users(\/[^/]+)?|referrals|audit-log|billing\/financial-events|members)\/?$/.test(
     path,
   );
 }
@@ -154,7 +207,35 @@ operationsRoutes.get(
     return c.json({ valid: rows.length > 0 });
   },
 );
-operationsRoutes.get('/admin/session', (c) => c.json({ role: 'owner' }));
+operationsRoutes.get('/admin/session', (c) =>
+  c.json({ role: c.get('operationsRole'), accountId: c.get('operationsAccountId') }),
+);
+operationsRoutes.get('/admin/members', async (c) => {
+  await auditRead(c, 'admin.members.read', 'members');
+  return c.json(await listMembers());
+});
+operationsRoutes.post('/admin/members', async (c) => {
+  const input = await body(c, memberAddSchema);
+  return c.json(
+    await setMember(operator(c), await accountByEmail(input.email), input.role, input),
+  );
+});
+operationsRoutes.post('/admin/members/:id/role', async (c) => {
+  const input = await body(c, memberRoleChangeSchema);
+  return c.json(
+    await setMember(operator(c), uuid(c.req.param('id')), input.role, input),
+  );
+});
+operationsRoutes.post('/admin/members/:id/remove', async (c) =>
+  c.json(
+    await setMember(
+      operator(c),
+      uuid(c.req.param('id')),
+      null,
+      await body(c, supportActionSchema),
+    ),
+  ),
+);
 operationsRoutes.get('/admin/overview', async (c) => {
   const rows = await getSql().query(
     `SELECT
@@ -231,16 +312,14 @@ operationsRoutes.get('/admin/campaigns', async (c) =>
     ),
   }),
 );
-operationsRoutes.post('/admin/campaigns', async (c) =>
-  c.json(
-    await createCampaign(
-      c.get('operationsAccountId'),
-      await body(c, campaignSchema),
-      c.get('requestId'),
-    ),
+operationsRoutes.post('/admin/campaigns', async (c) => {
+  const input = await body(c, campaignSchema);
+  if (input.kind === 'stripe_discount') requireOwner(c);
+  return c.json(
+    await createCampaign(c.get('operationsAccountId'), input, c.get('requestId')),
     201,
-  ),
-);
+  );
+});
 operationsRoutes.get('/admin/campaigns/:id/usage', async (c) => {
   const rows = await getSql().query(
     "SELECT stripe_promotion_id FROM access_campaign WHERE id=$1 AND kind='stripe_discount'",
@@ -262,8 +341,15 @@ operationsRoutes.get('/admin/campaigns/:id/usage', async (c) => {
 });
 operationsRoutes.post('/admin/campaigns/:id/revoke', async (c) => {
   const input = await body(c, reasonSchema);
+  const id = uuid(c.req.param('id'));
+  if (c.get('operationsRole') !== 'owner') {
+    const rows = await getSql().query('SELECT kind FROM access_campaign WHERE id=$1', [
+      id,
+    ]);
+    if (rows[0]?.kind !== 'access_grant') requireOwner(c);
+  }
   await revokeCampaign(
-    uuid(c.req.param('id')),
+    id,
     c.get('operationsAccountId'),
     input.reason,
     c.get('requestId'),
