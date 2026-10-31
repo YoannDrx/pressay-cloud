@@ -6,15 +6,10 @@ import { ApiError } from '../lib/errors.js';
 import { rateLimit } from '../lib/rate-limit.js';
 import { isRecentAuthentication } from '../lib/recent-authentication.js';
 import { getSql } from '../db/client.js';
-import { getEnvironment } from '../env.js';
+import { expectedStripeLivemode, getEnvironment } from '../env.js';
 import { getStripe } from '../billing/stripe-client.js';
-import {
-  bootstrapWebAccount,
-  recordAccountContact,
-  getUsage,
-  listDevices,
-  getAccountSnapshot,
-} from '../services/accounts.js';
+import { bootstrapWebAccount, recordAccountContact } from '../services/accounts.js';
+import { customerDetail, searchAccounts } from '../services/admin-customers.js';
 import {
   accountId,
   audit,
@@ -32,7 +27,6 @@ import {
 import { consume } from '../services/rate-limits.js';
 import {
   campaignSchema,
-  adminUsersSchema,
   claimSchema,
   attributionSchema,
   reasonSchema,
@@ -138,8 +132,13 @@ operationsRoutes.get('/admin/overview', async (c) => {
     (SELECT count(*)::int FROM download_event WHERE created_at>now()-interval '30 days') AS downloads_30d`,
     [],
   );
+  // Apple Sandbox access (App Review, TestFlight) is reported apart from paid Pro.
   const plans = await getSql().query(
-    "SELECT CASE WHEN tier='pro' AND valid_until>now() THEN 'pro' ELSE 'free' END AS plan,count(*)::int AS count FROM entitlement GROUP BY 1",
+    `SELECT CASE WHEN e.tier='pro' AND e.valid_until>now()
+      THEN CASE WHEN e.sandbox THEN 'sandbox' ELSE 'pro' END ELSE 'free' END AS plan,
+      count(*)::int AS count
+    FROM entitlement e JOIN pressay_account a ON a.id=e.account_id
+    WHERE a.status='active' GROUP BY 1`,
     [],
   );
   const subscriptions = await getSql().query(
@@ -168,62 +167,22 @@ operationsRoutes.get('/admin/overview', async (c) => {
 operationsRoutes.get('/admin/users', async (c) => {
   const parsed = userQuerySchema.safeParse(c.req.query());
   if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
-  const q = parsed.data;
   await auditRead(c, 'admin.users.read', 'users');
-  const rows = await getSql().query(
-    `SELECT a.id,u.email,u.email AS display_name,a.status,a.created_at,
-    CASE WHEN e.tier='pro' AND e.valid_until>now() THEN 'pro' ELSE 'free' END AS plan,
-    (SELECT count(*)::int FROM pressay_device WHERE account_id=a.id AND revoked_at IS NULL) AS active_device_count,
-    (SELECT max(last_seen_at) FROM pressay_device WHERE account_id=a.id) AS last_device_seen_at
-    FROM pressay_account a LEFT JOIN account_contact u ON u.account_id=a.id JOIN entitlement e ON e.account_id=a.id
-    WHERE ($1='' OR u.email ILIKE '%'||$1||'%' OR u.email ILIKE '%'||$1||'%' OR a.id::text=$1)
-      AND ($2='' OR (CASE WHEN e.tier='pro' AND e.valid_until>now() THEN 'pro' ELSE 'free' END)=$2)
-      AND ($3='' OR a.status=$3) AND ($4::uuid IS NULL OR a.id>$4::uuid)
-    ORDER BY a.id LIMIT 51`,
-    [q.search, q.plan, q.status, q.cursor ?? null],
-  );
-  return c.json(
-    adminUsersSchema.parse({
-      users: rows.slice(0, 50),
-      nextCursor: rows.length > 50 ? String(rows[49]?.id) : null,
-    }),
-  );
+  return c.json(await searchAccounts(parsed.data));
 });
 operationsRoutes.get('/admin/users/:id', async (c) => {
   const id = uuid(c.req.param('id'));
   await auditRead(c, 'admin.user.read', id);
-  const rows = await getSql().query(
-    'SELECT a.auth_user_id,u.email FROM pressay_account a LEFT JOIN account_contact u ON u.account_id=a.id WHERE a.id=$1',
-    [id],
+  // The web reads linked identities, passkeys and sessions from its own
+  // database only after this owner + step-up check succeeds; record that too.
+  if (c.req.query('include') === 'identity')
+    await auditRead(c, 'admin.user.identity.read', id);
+  return c.json(
+    await customerDetail(
+      id,
+      expectedStripeLivemode(getEnvironment()) ? 'live' : 'test',
+    ),
   );
-  if (!rows[0]) throw new ApiError(404, 'account_not_found', 'Account not found');
-  const [account, usage, devices, subscriptions, grants, referrals] = await Promise.all(
-    [
-      getAccountSnapshot(String(rows[0].auth_user_id)),
-      getUsage(String(rows[0].auth_user_id)),
-      listDevices(String(rows[0].auth_user_id)),
-      getSql().query(
-        'SELECT provider,status,billing_interval,current_period_ends_at,apple_environment FROM billing_subscription WHERE account_id=$1',
-        [id],
-      ),
-      getSql().query(
-        'SELECT id,source,starts_at,ends_at,revoked_at FROM access_grant WHERE account_id=$1 ORDER BY created_at DESC',
-        [id],
-      ),
-      getSql().query(
-        'SELECT id,referrer_id,referee_id,status,attributed_at FROM referral_attribution WHERE referrer_id=$1 OR referee_id=$1',
-        [id],
-      ),
-    ],
-  );
-  return c.json({
-    account: { ...account, email: rows[0].email ? String(rows[0].email) : null },
-    usage,
-    devices,
-    subscriptions,
-    grants,
-    referrals,
-  });
 });
 operationsRoutes.get('/admin/campaigns', async (c) =>
   c.json({

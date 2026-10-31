@@ -148,6 +148,29 @@ session, of a sign-in (`pressay_auth_at`) or a second-factor step-up
 (`maxAgeSeconds`), and the web asks the user to sign in again. Desktop OAuth
 access tokens keep their existing deletion contract.
 
+## Support reads
+
+`/v1/admin/*` is reserved to the single operations owner. Reads that return a
+person's data (`users`, `users/:id`, `referrals`) need a second-factor step-up
+less than ten minutes old and are written to `operations_audit` as
+`personal_data_read`, without the search terms.
+
+`GET /v1/admin/users` recognises the format of the search: `cus_…` (Stripe
+customer), `sub_…` (Stripe subscription), a decimal App Store original
+transaction (production or Sandbox), a UUID (account, device or identity
+subject), otherwise an email substring with `%` and `_` matched literally. Each
+identifier is looked up on its own indexed column. Accounts without an
+entitlement row are listed; Apple Sandbox access is reported as plan `sandbox`,
+never as paid `pro`, here and in `GET /v1/admin/overview`.
+
+`GET /v1/admin/users/:id` returns the support record: identity subject,
+Stripe and App Store identifiers, full subscriptions, the last 50 financial
+events, checkout consents, the deletion job, every device (revoked included),
+twelve months of Cloud usage and the audit entries that target the account or
+its grants (reads are counted, not listed). With `?include=identity`, the web
+also reads linked sign-in methods, passkeys and sessions from its own database,
+and the API records that read as `admin.user.identity.read`.
+
 ## Retention matrix
 
 | Data                                                           | Retention                                                                   | Mechanism               |
