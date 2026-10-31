@@ -232,6 +232,7 @@ describe('App Store billing', () => {
 
   it('caps Sandbox access in production to the configured window', async () => {
     settings.PRESSAY_DEPLOYMENT_ENV = 'production';
+    settings.APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS = [accountId];
     settings.APPLE_SANDBOX_MAX_GRANT_HOURS = 24;
     query
       .mockResolvedValueOnce(productRows)
@@ -254,9 +255,12 @@ describe('App Store billing', () => {
     expect(queryParameters(2)[12]).toBe(Environment.SANDBOX);
   });
 
-  it('rejects Sandbox restores in production for accounts outside the allowlist', async () => {
+  it.each([
+    ['an empty allowlist', [] as string[]],
+    ['an allowlist without the account', [otherAccountId]],
+  ])('rejects Sandbox restores in production with %s', async (_, allowlist) => {
     settings.PRESSAY_DEPLOYMENT_ENV = 'production';
-    settings.APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS = [otherAccountId];
+    settings.APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS = allowlist;
     query.mockResolvedValueOnce(productRows).mockResolvedValueOnce([]);
     verifyAppleTransaction.mockResolvedValue({
       environment: Environment.SANDBOX,
@@ -314,9 +318,12 @@ describe('App Store billing', () => {
     expect(queryParameters(1)[1]).toBeNull();
   });
 
-  it('ignores Sandbox notifications for accounts outside the production allowlist', async () => {
+  it.each([
+    ['an empty allowlist', [] as string[]],
+    ['an allowlist without the account', [otherAccountId]],
+  ])('ignores Sandbox notifications in production with %s', async (_, allowlist) => {
     settings.PRESSAY_DEPLOYMENT_ENV = 'production';
-    settings.APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS = [otherAccountId];
+    settings.APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS = allowlist;
     mockNotification(Environment.SANDBOX, baseTransaction);
     query
       .mockResolvedValueOnce([

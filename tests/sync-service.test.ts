@@ -6,6 +6,7 @@ vi.mock('../src/db/client.ts', () => ({
 }));
 
 import { syncChangeInputSchema } from '../src/contracts/sync.ts';
+import { clearEnvironmentCacheForTests } from '../src/env.ts';
 import {
   appendSyncChanges,
   approveSyncDevice,
@@ -26,7 +27,55 @@ const envelope = Buffer.alloc(48, 7).toString('base64');
 const codeHash = Buffer.alloc(32, 9).toString('base64');
 
 describe('E2EE sync', () => {
-  beforeEach(() => query.mockReset());
+  beforeEach(() => {
+    query.mockReset();
+    process.env.DATABASE_URL = 'postgresql://example.test/pressay';
+    delete process.env.PRESSAY_DEPLOYMENT_ENV;
+    delete process.env.ENTITLEMENT_SIGNING_KEY_ID;
+    clearEnvironmentCacheForTests();
+  });
+
+  async function runEverySyncOperation(): Promise<void> {
+    query.mockResolvedValue([]);
+    const attempts: Promise<unknown>[] = [
+      enrollSyncDevice('auth-user', deviceId, envelope, envelope),
+      listSyncDevices('auth-user', deviceId),
+      getSyncDeviceEnvelope('auth-user', deviceId),
+      approveSyncDevice('auth-user', deviceId, deviceId, envelope),
+      configureSyncRecovery('auth-user', deviceId, codeHash, envelope),
+      deleteSyncRecovery('auth-user', deviceId),
+      beginSyncRecovery('auth-user', deviceId, envelope, codeHash),
+      completeSyncRecovery('auth-user', deviceId, codeHash, envelope),
+      appendSyncChanges('auth-user', deviceId, []),
+      getSyncChanges('auth-user', deviceId, 0, 10),
+    ];
+    await Promise.allSettled(attempts);
+  }
+
+  function proChecks(): string[] {
+    return query.mock.calls
+      .map((call) => String(call[0]))
+      .filter((sql) => sql.includes(".tier = 'pro'"));
+  }
+
+  it('never lets an Apple Sandbox entitlement unlock sync in production', async () => {
+    process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
+    process.env.ENTITLEMENT_SIGNING_KEY_ID = 'pressay-entitlement-production-2026-01';
+    clearEnvironmentCacheForTests();
+    await runEverySyncOperation();
+    const checks = proChecks();
+    expect(checks.length).toBeGreaterThanOrEqual(7);
+    for (const sql of checks) expect(sql).toMatch(/\b(e|entitlement)\.sandbox = false/);
+  });
+
+  it('keeps Sandbox entitlements usable for sync outside production', async () => {
+    process.env.PRESSAY_DEPLOYMENT_ENV = 'staging';
+    clearEnvironmentCacheForTests();
+    await runEverySyncOperation();
+    const checks = proChecks();
+    expect(checks.length).toBeGreaterThanOrEqual(7);
+    for (const sql of checks) expect(sql).not.toContain('sandbox');
+  });
 
   it('has no schema route for history, transcript, audio or BYOK data', () => {
     for (const objectType of ['history', 'transcript', 'audio', 'byok_key']) {
