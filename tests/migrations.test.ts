@@ -80,4 +80,17 @@ describe('database migrations', () => {
     expect(migration).toContain(') >= 3 THEN');
     expect(migration).not.toMatch(/^\s*CREATE (TABLE|FUNCTION|INDEX) /m);
   });
+
+  it('adds a transient, replayable Checkout lease per account', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0022_billing_checkout_lease.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS billing_checkout_lease');
+    expect(migration).toContain(
+      'account_id uuid PRIMARY KEY REFERENCES pressay_account (id) ON DELETE CASCADE',
+    );
+    expect(migration).toContain('expires_at timestamptz NOT NULL');
+  });
 });

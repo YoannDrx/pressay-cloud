@@ -1,5 +1,5 @@
 import { captureReferralEvent } from './referrals.js';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import type Stripe from 'stripe';
 import { z } from 'zod';
@@ -28,6 +28,25 @@ const CHECKOUT_INTEGRATION_IDENTIFIER = 'pressay_direct_v1_vkmrqjtp';
 
 /** Subscription states that still grant (or may soon grant) Pro. */
 const LIVE_SUBSCRIPTION_STATUSES = "('trialing', 'active', 'past_due', 'grace')";
+
+/**
+ * Stripe subscription states that bill (or will bill again) the customer. A
+ * second Checkout for a customer with one of these would create a second
+ * subscription, so it is refused even when the webhook has not reached
+ * Postgres yet.
+ */
+const STRIPE_BLOCKING_SUBSCRIPTION_STATUSES: ReadonlySet<Stripe.Subscription.Status> =
+  new Set(['active', 'trialing', 'past_due', 'unpaid']);
+
+/**
+ * Longer than the 60-second function limit (vercel.json), so a lease is never
+ * reclaimed while its request can still create a session, yet short enough
+ * that a crashed request does not block the account for long.
+ */
+const CHECKOUT_LEASE_SECONDS = 90;
+
+/** An open session closer than this to its expiry is replaced, not reused. */
+const CHECKOUT_REUSE_MIN_REMAINING_SECONDS = 5 * 60;
 
 function stripeCheckoutIdempotencyKey(accountId: string, clientKey: string): string {
   const digest = createHash('sha256').update(clientKey).digest('hex');
@@ -125,6 +144,116 @@ function checkoutTaxParameters(): Pick<
   };
 }
 
+function checkoutInProgress(): ApiError {
+  return new ApiError(
+    409,
+    'checkout_in_progress',
+    'A checkout is already in progress for this account. Try again in a moment.',
+  );
+}
+
+function subscriptionAlreadyActive(): ApiError {
+  return new ApiError(
+    409,
+    'subscription_already_active',
+    'A Pressay subscription is already active. Manage it from the billing portal.',
+    {},
+    { manage: 'billing_portal' },
+  );
+}
+
+async function acquireCheckoutLease(accountId: string): Promise<string> {
+  const leaseId = randomUUID();
+  const rows = await getSql().query(
+    `INSERT INTO billing_checkout_lease (account_id, lease_id, expires_at)
+    VALUES ($1, $2, now() + make_interval(secs => $3))
+    ON CONFLICT (account_id) DO UPDATE SET
+      lease_id = EXCLUDED.lease_id,
+      expires_at = EXCLUDED.expires_at
+    WHERE billing_checkout_lease.expires_at <= now()
+    RETURNING lease_id`,
+    [accountId, leaseId, CHECKOUT_LEASE_SECONDS],
+  );
+  if (z.object({ lease_id: z.literal(leaseId) }).safeParse(rows[0]).success) {
+    return leaseId;
+  }
+  throw checkoutInProgress();
+}
+
+async function releaseCheckoutLease(accountId: string, leaseId: string): Promise<void> {
+  try {
+    await getSql().query(
+      'DELETE FROM billing_checkout_lease WHERE account_id = $1 AND lease_id = $2',
+      [accountId, leaseId],
+    );
+  } catch (error) {
+    // The lease expires on its own; never mask the checkout outcome.
+    writeLog('warn', 'billing.checkout_lease_release_failed', {
+      code: stableErrorCode(error),
+    });
+  }
+}
+
+/**
+ * Stripe is the source of truth for what the customer can still be charged
+ * for. Refuse when a billing subscription exists, reuse an open Checkout
+ * Session for the same Price, and expire any other open session so the
+ * customer never holds two payable sessions at once.
+ */
+async function reusableCheckoutUrl(
+  customerId: string,
+  accountId: string,
+  priceId: string,
+): Promise<string | null> {
+  const stripe = getStripe();
+  // Without a status filter Stripe lists every subscription except canceled ones.
+  const subscriptions = await stripe.subscriptions.list({
+    customer: customerId,
+    limit: 100,
+  });
+  if (
+    subscriptions.data.some((subscription) =>
+      STRIPE_BLOCKING_SUBSCRIPTION_STATUSES.has(subscription.status),
+    )
+  ) {
+    throw subscriptionAlreadyActive();
+  }
+
+  const openSessions = await stripe.checkout.sessions.list({
+    customer: customerId,
+    status: 'open',
+    limit: 100,
+  });
+  const reuseBefore =
+    Math.floor(Date.now() / 1000) + CHECKOUT_REUSE_MIN_REMAINING_SECONDS;
+  let reusable: string | null = null;
+  for (const session of openSessions.data) {
+    if (
+      reusable === null &&
+      session.mode === 'subscription' &&
+      session.url &&
+      session.metadata?.pressay_account_id === accountId &&
+      session.metadata.pressay_price_id === priceId &&
+      session.expires_at >= reuseBefore
+    ) {
+      reusable = session.url;
+      continue;
+    }
+    try {
+      await stripe.checkout.sessions.expire(session.id);
+    } catch (error) {
+      // Stripe refuses to expire a session that is no longer open, which
+      // happens when the customer is completing it right now. Do not create a
+      // second session alongside it.
+      writeLog('warn', 'billing.checkout_session_expire_failed', {
+        code: stableErrorCode(error),
+      });
+      throw checkoutInProgress();
+    }
+  }
+  return reusable;
+}
+
 export async function createCheckout(
   authUserId: string,
   email: string,
@@ -143,13 +272,7 @@ export async function createCheckout(
   }
   const context = await getCheckoutContext(authUserId, interval);
   if (context.stripe_subscription_active) {
-    throw new ApiError(
-      409,
-      'subscription_already_active',
-      'A Pressay subscription is already active. Manage it from the billing portal.',
-      {},
-      { manage: 'billing_portal' },
-    );
+    throw subscriptionAlreadyActive();
   }
   if (context.apple_subscription_active) {
     throw new ApiError(
@@ -160,6 +283,32 @@ export async function createCheckout(
       { manageSubscriptionsUrl: 'https://apps.apple.com/account/subscriptions' },
     );
   }
+  // Two tabs (or a double submit) must not create two Checkout Sessions, and
+  // therefore two subscriptions: one creation at a time per account.
+  const leaseId = await acquireCheckoutLease(context.account_id);
+  try {
+    return await createCheckoutWithLease(
+      context,
+      authUserId,
+      email,
+      idempotencyKey,
+      termsVersion,
+      immediatePerformanceConsent,
+    );
+  } finally {
+    await releaseCheckoutLease(context.account_id, leaseId);
+  }
+}
+
+async function createCheckoutWithLease(
+  context: z.infer<typeof checkoutContextSchema>,
+  authUserId: string,
+  email: string,
+  idempotencyKey: string,
+  termsVersion: string,
+  immediatePerformanceConsent: true,
+): Promise<string> {
+  const environment = getEnvironment();
   await getSql().query(
     `INSERT INTO billing_legal_acceptance (
       account_id, checkout_idempotency_key, terms_version,
@@ -174,6 +323,15 @@ export async function createCheckout(
     context.account_id,
     context.stripe_customer_id,
   );
+  const reusableUrl = await reusableCheckoutUrl(
+    customerId,
+    context.account_id,
+    context.provider_price_id,
+  );
+  if (reusableUrl) {
+    writeLog('info', 'billing.checkout_session_reused', { provider: 'stripe' });
+    return reusableUrl;
+  }
   const session = await getStripe().checkout.sessions.create(
     {
       mode: 'subscription',
@@ -184,7 +342,10 @@ export async function createCheckout(
       cancel_url: environment.STRIPE_CHECKOUT_CANCEL_URL,
       allow_promotion_codes: true,
       client_reference_id: context.account_id,
-      metadata: { pressay_account_id: context.account_id },
+      metadata: {
+        pressay_account_id: context.account_id,
+        pressay_price_id: context.provider_price_id,
+      },
       subscription_data: {
         metadata: { pressay_account_id: context.account_id },
       },
