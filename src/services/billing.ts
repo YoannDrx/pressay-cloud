@@ -492,8 +492,12 @@ async function recordStripeFinancialProjection(
   const rows = await getSql().query(
     `WITH incoming AS (
       INSERT INTO provider_event (
-        provider, provider_event_id, payload_sha256, event_type, provider_occurred_at
-      ) VALUES ('stripe', $1, decode($2, 'hex'), $3, to_timestamp($4))
+        provider, provider_event_id, payload_sha256, event_type, provider_occurred_at,
+        account_id
+      ) VALUES (
+        'stripe', $1, decode($2, 'hex'), $3, to_timestamp($4),
+        (SELECT account_id FROM billing_customer WHERE stripe_customer_id = $5)
+      )
       ${RETRYABLE_PROVIDER_EVENT_CONFLICT}
       RETURNING provider_event_id
     ), account_context AS (
@@ -904,8 +908,9 @@ async function applyStripeSubscription(
   const projection = await getSql().query(
     `WITH incoming AS (
       INSERT INTO provider_event (
-        provider, provider_event_id, payload_sha256, event_type, provider_occurred_at
-      ) VALUES ('stripe', $1, decode($2, 'hex'), $3, to_timestamp($4))
+        provider, provider_event_id, payload_sha256, event_type, provider_occurred_at,
+        account_id
+      ) VALUES ('stripe', $1, decode($2, 'hex'), $3, to_timestamp($4), $5)
       ${RETRYABLE_PROVIDER_EVENT_CONFLICT}
       RETURNING provider_event_id
     ), subscription_upsert AS (
@@ -1078,4 +1083,71 @@ export async function processStripeWebhook(
     });
     throw error;
   }
+}
+
+/**
+ * Replay a Stripe event whose processing failed: read it again from Stripe
+ * (events are kept 30 days) and run the same projection as the webhook. The
+ * projection only takes over `failed` rows, so a replay can never apply an
+ * event twice. Returns the event's state afterwards.
+ */
+export async function replayStripeEvent(
+  eventId: string,
+): Promise<{ state: string; errorCode: string | null; accountId: string | null }> {
+  const environment = getEnvironment();
+  const stored = await getSql().query(
+    `SELECT state, encode(payload_sha256, 'hex') AS payload_hash
+    FROM provider_event WHERE provider = 'stripe' AND provider_event_id = $1`,
+    [eventId],
+  );
+  const row = stored[0] as { state?: unknown; payload_hash?: unknown } | undefined;
+  if (!row) throw new ApiError(404, 'event_not_found', 'Event not found');
+  if (row.state !== 'failed')
+    throw new ApiError(409, 'event_not_failed', 'Only failed events can be replayed');
+  let event: Stripe.Event;
+  try {
+    event = await getStripe().events.retrieve(
+      eventId,
+      {},
+      { timeout: 8000, maxNetworkRetries: 1 },
+    );
+  } catch (error) {
+    if (isMissingStripeResource(error))
+      throw new ApiError(
+        409,
+        'stripe_event_unavailable',
+        'Stripe no longer serves this event (kept 30 days)',
+      );
+    throw new ApiError(503, 'stripe_unavailable', 'Stripe is unavailable');
+  }
+  if (event.livemode !== expectedStripeLivemode(environment))
+    throw new ApiError(
+      409,
+      'stripe_livemode_mismatch',
+      'Event from the other Stripe mode',
+    );
+  const payloadHash = String(row.payload_hash);
+  try {
+    await projectStripeEvent(event, payloadHash);
+  } catch (error) {
+    await recordFailedProviderEvent({
+      provider: 'stripe',
+      eventId: event.id,
+      payloadHash,
+      eventType: event.type,
+      occurredAtMs: event.created * 1000,
+      errorCode: stableErrorCode(error),
+    });
+  }
+  const after = await getSql().query(
+    `SELECT state, error_code, account_id
+    FROM provider_event WHERE provider = 'stripe' AND provider_event_id = $1`,
+    [eventId],
+  );
+  const result = after[0] as Record<string, unknown> | undefined;
+  return {
+    state: typeof result?.state === 'string' ? result.state : 'failed',
+    errorCode: typeof result?.error_code === 'string' ? result.error_code : null,
+    accountId: typeof result?.account_id === 'string' ? result.account_id : null,
+  };
 }

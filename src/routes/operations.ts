@@ -11,6 +11,12 @@ import { getStripe } from '../billing/stripe-client.js';
 import { bootstrapWebAccount, recordAccountContact } from '../services/accounts.js';
 import { customerDetail, searchAccounts } from '../services/admin-customers.js';
 import {
+  billingAlerts,
+  financialEvents,
+  providerEvents,
+  replayProviderEvent,
+} from '../services/admin-billing.js';
+import {
   auditLog,
   extendGrant,
   offerSupportAccess,
@@ -48,6 +54,8 @@ import {
   externalAuditSchema,
   supportActionSchema,
   supportGrantSchema,
+  financialEventQuerySchema,
+  providerEventQuerySchema,
 } from '../contracts/operations.js';
 
 export const operationsRoutes = new Hono<AppEnvironment>();
@@ -75,7 +83,9 @@ operationsRoutes.use('/admin/*', async (c, next) => {
 });
 /** Admin reads that return emails, a person's full record or the audit ledger. */
 function personalDataRead(path: string): boolean {
-  return /\/admin\/(users(\/[^/]+)?|referrals|audit-log)\/?$/.test(path);
+  return /\/admin\/(users(\/[^/]+)?|referrals|audit-log|billing\/financial-events)\/?$/.test(
+    path,
+  );
 }
 function operator(c: Context<AppEnvironment>): Operator {
   return { actor: c.get('operationsAccountId'), requestId: c.get('requestId') };
@@ -368,14 +378,31 @@ operationsRoutes.post('/admin/rewards/:id/retry', async (c) => {
     );
   return c.json(await runReferralRewards(10));
 });
-operationsRoutes.get('/admin/billing/events', async (c) =>
-  c.json({
-    events: await getSql().query(
-      'SELECT provider,provider_event_id,event_type,state,error_code,received_at,processed_at FROM provider_event ORDER BY received_at DESC LIMIT 100',
-      [],
+operationsRoutes.get('/admin/billing/events', async (c) => {
+  const parsed = providerEventQuerySchema.safeParse(c.req.query());
+  if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
+  return c.json(await providerEvents(parsed.data));
+});
+operationsRoutes.get('/admin/billing/financial-events', async (c) => {
+  const parsed = financialEventQuerySchema.safeParse(c.req.query());
+  if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
+  await auditRead(c, 'admin.billing.financial.read', 'billing/financial-events');
+  return c.json(await financialEvents(parsed.data));
+});
+operationsRoutes.post('/admin/billing/events/:provider/:id/replay', async (c) => {
+  const eventId = c.req.param('id');
+  if (!/^[A-Za-z0-9_.:-]{1,255}$/.test(eventId))
+    throw new ApiError(422, 'invalid_id', 'Invalid identifier');
+  return c.json(
+    await replayProviderEvent(
+      operator(c),
+      c.req.param('provider'),
+      eventId,
+      await body(c, supportActionSchema),
     ),
-  }),
-);
+  );
+});
+operationsRoutes.get('/admin/alerts', async (c) => c.json(await billingAlerts()));
 operationsRoutes.get('/admin/audit-log', async (c) => {
   const parsed = auditQuerySchema.safeParse(c.req.query());
   if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');

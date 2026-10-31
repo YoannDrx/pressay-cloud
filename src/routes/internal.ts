@@ -9,6 +9,7 @@ import { writeLog } from '../lib/logger.js';
 import { runAccountDeletionBatch } from '../services/account-deletion.js';
 import { cleanupExpiredRateLimitBuckets } from '../services/rate-limits.js';
 import { purgeExpiredRecords } from '../services/retention.js';
+import { runOpsDigest } from '../services/ops-digest.js';
 import type { AppEnvironment } from '../types.js';
 
 export const internalRoutes = new Hono<AppEnvironment>();
@@ -49,6 +50,11 @@ internalRoutes.get('/internal/jobs/referral-rewards', async (context) => {
     drained: rewards.drained,
   });
   return context.json(rewards);
+});
+
+internalRoutes.get('/internal/jobs/ops-digest', async (context) => {
+  requireInternalSecret(context.req.header('authorization'));
+  return context.json(await runOpsDigest());
 });
 
 function requireInternalSecret(authorization: string | undefined): void {

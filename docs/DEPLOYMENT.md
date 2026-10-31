@@ -75,6 +75,14 @@ production deploy requires at least:
 - `PRESSAY_CLOUD_PROCESSING_ENABLED=false` until `OPENAI_API_KEY` and the
   retention wording are in place
 
+Optional: `OPS_ALERT_WEBHOOK_URL` (HTTPS). The daily `ops-digest` cron
+(06:00 UTC, `CRON_SECRET`) always logs `ops_digest.completed` with the billing
+counters (failed webhooks, open disputes, unpaid and duplicate subscriptions,
+refunds and failed payments in 24 h); when the variable is set it also posts
+the same counters as JSON (`service`, `environment`, `generatedAt`,
+`attention`, `counters`), without identifiers or emails, with a 5-second
+timeout and no redirect.
+
 Cloud no longer runs its own Better Auth. All end-user identity comes from the
 OAuth 2.1 issuer on `press-say.app`; `BETTER_AUTH_SECRET`, `RESEND_API_KEY`,
 `PRESSAY_AUTH_FROM_EMAIL`, `GOOGLE_CLIENT_*` and the Sign in with Apple

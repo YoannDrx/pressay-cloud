@@ -225,8 +225,9 @@ async function applyAppleSubscription(
     rows = await getSql().query(
       `WITH incoming AS (
         INSERT INTO provider_event (
-          provider, provider_event_id, payload_sha256, event_type, provider_occurred_at
-        ) VALUES ('apple', $1, decode($2, 'hex'), $3, to_timestamp($4 / 1000.0))
+          provider, provider_event_id, payload_sha256, event_type, provider_occurred_at,
+          account_id
+        ) VALUES ('apple', $1, decode($2, 'hex'), $3, to_timestamp($4 / 1000.0), $5)
         ${RETRYABLE_PROVIDER_EVENT_CONFLICT}
         RETURNING provider_event_id
       ), customer_upsert AS (
