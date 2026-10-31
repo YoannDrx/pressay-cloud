@@ -10,6 +10,24 @@ import { expectedStripeLivemode, getEnvironment } from '../env.js';
 import { getStripe } from '../billing/stripe-client.js';
 import { bootstrapWebAccount, recordAccountContact } from '../services/accounts.js';
 import { customerDetail, searchAccounts } from '../services/admin-customers.js';
+import { adminMetrics } from '../services/admin-metrics.js';
+import {
+  billingAlerts,
+  financialEvents,
+  providerEvents,
+  replayProviderEvent,
+} from '../services/admin-billing.js';
+import {
+  auditLog,
+  extendGrant,
+  offerSupportAccess,
+  recordExternalAction,
+  requestDeletionAsSupport,
+  restoreDeviceAsSupport,
+  revokeDeviceAsSupport,
+  revokeGrant,
+  type Operator,
+} from '../services/admin-support.js';
 import {
   accountId,
   audit,
@@ -34,6 +52,13 @@ import {
   reasonSchema,
   gateSchema,
   userQuerySchema,
+  adminDeletionSchema,
+  auditQuerySchema,
+  externalAuditSchema,
+  supportActionSchema,
+  supportGrantSchema,
+  financialEventQuerySchema,
+  providerEventQuerySchema,
 } from '../contracts/operations.js';
 
 export const operationsRoutes = new Hono<AppEnvironment>();
@@ -59,9 +84,14 @@ operationsRoutes.use('/admin/*', async (c, next) => {
   if (mutation) await consume('admin_mutation', owner, 20);
   await next();
 });
-/** Admin reads that return emails or a person's full record. */
+/** Admin reads that return emails, a person's full record or the audit ledger. */
 function personalDataRead(path: string): boolean {
-  return /\/admin\/(users(\/[^/]+)?|referrals)\/?$/.test(path);
+  return /\/admin\/(users(\/[^/]+)?|referrals|audit-log|billing\/financial-events)\/?$/.test(
+    path,
+  );
+}
+function operator(c: Context<AppEnvironment>): Operator {
+  return { actor: c.get('operationsAccountId'), requestId: c.get('requestId') };
 }
 /** Second-factor proof bound to the web session, less than ten minutes old. */
 function requireRecentStepUp(sessionId: string, at: number): void {
@@ -73,13 +103,20 @@ function requireRecentStepUp(sessionId: string, at: number): void {
     );
 }
 /** Personal-data reads are recorded like mutations (no search terms stored). */
-async function auditRead(c: Context<AppEnvironment>, action: string, target: string) {
+async function auditRead(
+  c: Context<AppEnvironment>,
+  action: string,
+  target: string,
+  targetAccountId: string | null = null,
+) {
   await audit(
     c.get('operationsAccountId'),
     action,
     target,
     'personal_data_read',
     c.get('requestId'),
+    'succeeded',
+    { targetAccountId },
   );
 }
 operationsRoutes.use('/referrals/*', verifiedAccount);
@@ -174,11 +211,11 @@ operationsRoutes.get('/admin/users', async (c) => {
 });
 operationsRoutes.get('/admin/users/:id', async (c) => {
   const id = uuid(c.req.param('id'));
-  await auditRead(c, 'admin.user.read', id);
+  await auditRead(c, 'admin.user.read', id, id);
   // The web reads linked identities, passkeys and sessions from its own
   // database only after this owner + step-up check succeeds; record that too.
   if (c.req.query('include') === 'identity')
-    await auditRead(c, 'admin.user.identity.read', id);
+    await auditRead(c, 'admin.user.identity.read', id, id);
   return c.json(
     await customerDetail(
       id,
@@ -234,27 +271,61 @@ operationsRoutes.post('/admin/campaigns/:id/revoke', async (c) => {
   return c.json({ revoked: true });
 });
 operationsRoutes.post('/admin/grants/:id/revoke', async (c) => {
-  const input = await body(c, reasonSchema);
-  const id = uuid(c.req.param('id'));
-  await audit(
-    c.get('operationsAccountId'),
-    'grant.revoke.requested',
-    id,
-    input.reason,
-    c.get('requestId'),
-    'requested',
-  );
-  const rows = await getSql().query('SELECT revoke_pressay_grant($1) AS revoked', [id]);
-  if (!rows[0]?.revoked) throw new ApiError(404, 'grant_not_found', 'Grant not found');
-  await audit(
-    c.get('operationsAccountId'),
-    'grant.revoked',
-    id,
-    input.reason,
-    c.get('requestId'),
-  );
+  await revokeGrant(operator(c), uuid(c.req.param('id')), await body(c, reasonSchema));
   return c.json({ revoked: true });
 });
+operationsRoutes.post('/admin/grants/:id/extend', async (c) =>
+  c.json(
+    await extendGrant(
+      operator(c),
+      uuid(c.req.param('id')),
+      await body(c, supportGrantSchema),
+    ),
+  ),
+);
+operationsRoutes.post('/admin/users/:id/grants', async (c) =>
+  c.json(
+    await offerSupportAccess(
+      operator(c),
+      uuid(c.req.param('id')),
+      await body(c, supportGrantSchema),
+    ),
+    201,
+  ),
+);
+operationsRoutes.post('/admin/users/:id/deletion', async (c) =>
+  c.json(
+    await requestDeletionAsSupport(
+      operator(c),
+      uuid(c.req.param('id')),
+      await body(c, adminDeletionSchema),
+    ),
+    202,
+  ),
+);
+operationsRoutes.post('/admin/devices/:id/revoke', async (c) =>
+  c.json(
+    await revokeDeviceAsSupport(
+      operator(c),
+      uuid(c.req.param('id')),
+      await body(c, supportActionSchema),
+    ),
+  ),
+);
+operationsRoutes.post('/admin/devices/:id/restore', async (c) =>
+  c.json(
+    await restoreDeviceAsSupport(
+      operator(c),
+      uuid(c.req.param('id')),
+      await body(c, supportActionSchema),
+    ),
+  ),
+);
+// Actions the web performs on its own database (sessions, OAuth tokens),
+// after this owner + step-up check. Not relayed by the browser proxy.
+operationsRoutes.post('/admin/audit/external', async (c) =>
+  c.json(await recordExternalAction(operator(c), await body(c, externalAuditSchema))),
+);
 operationsRoutes.get('/admin/referrals', async (c) => {
   await auditRead(c, 'admin.referrals.read', 'referrals');
   return c.json({
@@ -310,22 +381,38 @@ operationsRoutes.post('/admin/rewards/:id/retry', async (c) => {
     );
   return c.json(await runReferralRewards(10));
 });
-operationsRoutes.get('/admin/billing/events', async (c) =>
-  c.json({
-    events: await getSql().query(
-      'SELECT provider,provider_event_id,event_type,state,error_code,received_at,processed_at FROM provider_event ORDER BY received_at DESC LIMIT 100',
-      [],
+operationsRoutes.get('/admin/billing/events', async (c) => {
+  const parsed = providerEventQuerySchema.safeParse(c.req.query());
+  if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
+  return c.json(await providerEvents(parsed.data));
+});
+operationsRoutes.get('/admin/billing/financial-events', async (c) => {
+  const parsed = financialEventQuerySchema.safeParse(c.req.query());
+  if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
+  await auditRead(c, 'admin.billing.financial.read', 'billing/financial-events');
+  return c.json(await financialEvents(parsed.data));
+});
+operationsRoutes.post('/admin/billing/events/:provider/:id/replay', async (c) => {
+  const eventId = c.req.param('id');
+  if (!/^[A-Za-z0-9_.:-]{1,255}$/.test(eventId))
+    throw new ApiError(422, 'invalid_id', 'Invalid identifier');
+  return c.json(
+    await replayProviderEvent(
+      operator(c),
+      c.req.param('provider'),
+      eventId,
+      await body(c, supportActionSchema),
     ),
-  }),
-);
-operationsRoutes.get('/admin/audit-log', async (c) =>
-  c.json({
-    entries: await getSql().query(
-      'SELECT * FROM operations_audit ORDER BY id DESC LIMIT 100',
-      [],
-    ),
-  }),
-);
+  );
+});
+operationsRoutes.get('/admin/alerts', async (c) => c.json(await billingAlerts()));
+operationsRoutes.get('/admin/metrics', async (c) => c.json(await adminMetrics()));
+operationsRoutes.get('/admin/audit-log', async (c) => {
+  const parsed = auditQuerySchema.safeParse(c.req.query());
+  if (!parsed.success) throw new ApiError(422, 'invalid_query', 'Invalid filter');
+  await auditRead(c, 'admin.audit.read', 'audit-log');
+  return c.json(await auditLog(parsed.data));
+});
 operationsRoutes.get('/admin/health', async (c) => {
   const gates = await getSql().query(
     'SELECT * FROM launch_gate ORDER BY channel,id',

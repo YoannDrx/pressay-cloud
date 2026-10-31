@@ -48,6 +48,8 @@ const environmentSchema = z
       .transform((value) => value === 'true'),
     PRESSAY_CAMPAIGN_SECRET: z.string().min(32).optional(),
     CRON_SECRET: z.string().min(32).optional(),
+    // Optional: the daily operations digest is also posted here as JSON.
+    OPS_ALERT_WEBHOOK_URL: z.url().startsWith('https://').optional(),
     PRESSAY_CLOUD_PROCESSING_ENABLED: z
       .enum(['true', 'false'])
       .default('false')
@@ -173,6 +175,18 @@ const environmentSchema = z
       .default('eur'),
     PRESSAY_PRO_MONTHLY_AMOUNT_MINOR: z.coerce.number().int().positive().default(799),
     PRESSAY_PRO_ANNUAL_AMOUNT_MINOR: z.coerce.number().int().positive().default(6900),
+    // App Store catalogue price, used for metrics when a signed transaction
+    // carries no price. Defaults to the Stripe catalogue amounts above.
+    PRESSAY_APP_STORE_MONTHLY_AMOUNT_MINOR: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional(),
+    PRESSAY_APP_STORE_ANNUAL_AMOUNT_MINOR: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional(),
     // Stripe Tax in Checkout. Keep false until Stripe Tax is activated, the
     // tax registrations exist and the prices are tax-inclusive.
     STRIPE_AUTOMATIC_TAX_ENABLED: z

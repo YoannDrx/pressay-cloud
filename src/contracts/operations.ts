@@ -49,6 +49,70 @@ export const gateSchema = reasonSchema
     evidence: z.string().trim().max(2000),
   })
   .refine((v) => v.status !== 'passed' || v.evidence.length >= 10, 'Evidence required');
+/** Support actions carry the form's idempotency key and a mandatory reason. */
+export const supportActionSchema = reasonSchema.extend({ idempotencyKey: z.uuid() });
+export const supportGrantSchema = supportActionSchema.extend({
+  days: z.coerce.number().int().min(1).max(365),
+});
+export const adminDeletionSchema = supportActionSchema.extend({
+  // Forms submit text; the API also accepts a JSON boolean.
+  acknowledgeAppleSubscription: z
+    .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
+    .default(false),
+});
+const auditCount = z.number().int().min(0).max(100000);
+/** Actions performed by the web on its own database, recorded by the Cloud. */
+export const externalAuditSchema = supportActionSchema.extend({
+  action: z.enum(['user.sessions.revoke']),
+  targetAccountId: z.uuid(),
+  result: z.enum(['requested', 'succeeded', 'failed']),
+  details: z
+    .strictObject({
+      webSessions: auditCount,
+      oauthRefreshTokens: auditCount,
+      oauthAccessTokens: auditCount,
+      errorCode: z.string().regex(/^[a-z0-9_]{1,64}$/),
+    })
+    .partial()
+    .default({}),
+});
+const auditDay = z.iso.date();
+export const auditQuerySchema = z.object({
+  // Exact action or a dotted prefix such as `grant` or `device.restore`.
+  action: z
+    .string()
+    .trim()
+    .max(80)
+    .regex(/^[a-z0-9_.]*$/)
+    .default(''),
+  // Account id (matches the entry's account), or any exact target id.
+  target: z.string().trim().max(120).default(''),
+  from: auditDay.optional(),
+  to: auditDay.optional(),
+  reads: z.enum(['include', 'exclude']).default('include'),
+  cursor: z.coerce.number().int().positive().optional(),
+});
+export const financialEventKinds = [
+  'invoice_paid',
+  'invoice_failed',
+  'invoice_voided',
+  'refund',
+  'dispute',
+] as const;
+export const financialEventQuerySchema = z.object({
+  kind: z.enum(['', ...financialEventKinds]).default(''),
+  // Disputes whose latest status still needs an answer or a decision.
+  open: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  cursor: z.string().max(200).optional(),
+});
+export const providerEventQuerySchema = z.object({
+  state: z.enum(['', 'received', 'applied', 'ignored', 'failed']).default(''),
+  provider: z.enum(['', 'stripe', 'apple']).default(''),
+  cursor: z.string().max(300).optional(),
+});
 export const userQuerySchema = z.object({
   search: z.string().trim().max(120).default(''),
   // Apple Sandbox access (App Review, TestFlight) is never counted as paid Pro.
@@ -119,6 +183,122 @@ export const adminUsersSchema = z.object({
   ),
   nextCursor: z.uuid().nullable(),
   searchKind: z.enum(adminUserSearchKinds),
+});
+const auditEntrySchema = z.object({
+  id: z.string(),
+  actor_id: z.uuid().nullable(),
+  action: z.string(),
+  target_id: z.string(),
+  target_account_id: z.uuid().nullable(),
+  reason: z.string(),
+  result: z.string(),
+  request_id: z.string(),
+  details: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
+    .nullable(),
+  created_at: date,
+});
+export const adminAuditLogSchema = z.object({
+  entries: z.array(auditEntrySchema.extend({ actor_email: z.string().nullable() })),
+  nextCursor: z.string().nullable(),
+});
+export const supportGrantResultSchema = z.object({
+  grantId: z.uuid(),
+  accountId: z.uuid(),
+  days: integer,
+  endsAt: date,
+  replayed: z.boolean().default(false),
+});
+export const deviceActionResultSchema = z.object({
+  deviceId: z.uuid(),
+  accountId: z.uuid(),
+  platform: z.enum(['macos', 'windows']),
+  changed: z.boolean(),
+  replayed: z.boolean().default(false),
+});
+export const adminFinancialEventsSchema = z.object({
+  events: z.array(
+    z.object({
+      provider_event_id: z.string(),
+      provider_object_id: z.string(),
+      provider_subscription_id: z.string().nullable(),
+      kind: z.enum(financialEventKinds),
+      status: z.string(),
+      amount_minor: integer,
+      currency: z.string(),
+      full_reversal: z.boolean(),
+      provider_occurred_at: date,
+      account_id: z.uuid().nullable(),
+      email: z.string().nullable(),
+    }),
+  ),
+  nextCursor: z.string().nullable(),
+});
+export const adminProviderEventsSchema = z.object({
+  events: z.array(
+    z.object({
+      provider: z.enum(['stripe', 'apple']),
+      provider_event_id: z.string(),
+      event_type: z.string(),
+      state: z.enum(['received', 'applied', 'ignored', 'failed']),
+      error_code: z.string().nullable(),
+      received_at: date,
+      processed_at: nullableDate,
+      account_id: z.uuid().nullable(),
+    }),
+  ),
+  nextCursor: z.string().nullable(),
+});
+export const adminAlertsSchema = z.object({
+  failed_webhooks: integer,
+  failed_webhooks_24h: integer,
+  open_disputes: integer,
+  unpaid_subscriptions: integer,
+  duplicate_subscriptions: integer,
+  refunds_24h: integer,
+  failed_payments_24h: integer,
+  checkedAt: z.string(),
+});
+export const adminMetricsSchema = z.object({
+  subscribers: z.array(
+    z.object({
+      provider: z.enum(['stripe', 'app_store']),
+      billing_interval: z.enum(['month', 'year']),
+      status: z.enum(['trialing', 'active', 'past_due', 'grace']),
+      environment: z.enum(['Production', 'Sandbox']),
+      count: integer,
+    }),
+  ),
+  mrr: z.array(
+    z.object({
+      provider: z.enum(['stripe', 'app_store']),
+      currency: z.string(),
+      mrr_minor: integer,
+      arr_minor: integer,
+      subscriptions: integer,
+      estimated_subscriptions: integer,
+    }),
+  ),
+  signups: z.array(z.object({ day: z.iso.date(), count: integer })),
+  activeAccounts: z.object({ active_7d: integer, active_30d: integer }),
+  grants: z.array(z.object({ source: z.string(), count: integer })),
+  collectedThisMonth: z.array(
+    z.object({
+      currency: z.string(),
+      paid_minor: integer,
+      refunded_minor: integer,
+      invoices: integer,
+    }),
+  ),
+  downloads: z.array(
+    z.object({
+      platform: z.enum(['macos', 'windows']),
+      app_version: z.string(),
+      last_7d: integer,
+      last_30d: integer,
+    }),
+  ),
+  generatedAt: z.string(),
 });
 export const adminUserDetailSchema = z.object({
   account: z.object({
@@ -227,6 +407,8 @@ export const adminUserDetailSchema = z.object({
       starts_at: date,
       ends_at: date,
       revoked_at: nullableDate,
+      reason: z.string().nullable(),
+      created_by: z.uuid().nullable(),
     }),
   ),
   referrals: z.array(
@@ -238,17 +420,7 @@ export const adminUserDetailSchema = z.object({
       attributed_at: date,
     }),
   ),
-  audit: z.array(
-    z.object({
-      id: z.string(),
-      actor_id: z.uuid().nullable(),
-      action: z.string(),
-      target_id: z.string(),
-      reason: z.string(),
-      result: z.string(),
-      request_id: z.string(),
-      created_at: date,
-    }),
-  ),
+  audit: z.array(auditEntrySchema),
   auditReads: z.object({ count: integer, lastAt: nullableDate }),
+  providerEvents: adminProviderEventsSchema.shape.events,
 });

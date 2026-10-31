@@ -11,6 +11,8 @@ vi.mock('../src/services/rate-limits.ts', () => ({
   cleanupExpiredRateLimitBuckets,
 }));
 vi.mock('../src/services/retention.ts', () => ({ purgeExpiredRecords }));
+const runOpsDigest = vi.hoisted(() => vi.fn());
+vi.mock('../src/services/ops-digest.ts', () => ({ runOpsDigest }));
 
 import app from '../src/app.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
@@ -32,6 +34,7 @@ describe('internal operational routes', () => {
     cleanupExpiredRateLimitBuckets.mockResolvedValue(12);
     purgeExpiredRecords.mockResolvedValue({
       idempotencyRecords: 3,
+      operationsRequests: 2,
       usageReservations: 0,
       providerEvents: 1,
       legacySessions: 0,
@@ -59,6 +62,7 @@ describe('internal operational routes', () => {
       rateLimitBucketsDeleted: 12,
       purged: {
         idempotencyRecords: 3,
+        operationsRequests: 2,
         usageReservations: 0,
         providerEvents: 1,
         legacySessions: 0,
@@ -86,6 +90,20 @@ describe('internal operational routes', () => {
       processed: 0,
       attempted: 0,
       drained: true,
+    });
+  });
+
+  it('runs the daily operations digest only for the authenticated cron', async () => {
+    runOpsDigest.mockResolvedValue({ attention: false, delivery: 'not_configured' });
+    expect((await app.request('/v1/internal/jobs/ops-digest')).status).toBe(401);
+    expect(runOpsDigest).not.toHaveBeenCalled();
+    const response = await app.request('/v1/internal/jobs/ops-digest', {
+      headers: { authorization: `Bearer ${cronSecret}` },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      attention: false,
+      delivery: 'not_configured',
     });
   });
 });

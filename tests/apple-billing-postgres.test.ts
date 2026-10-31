@@ -55,6 +55,8 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
         '0016_app_review_sandbox.sql',
         '0017_operations.sql',
         '0019_billing_hardening.sql',
+        '0025_provider_event_account.sql',
+        '0026_subscription_price.sql',
       ]) {
         await client.query(
           await readFile(new URL(`../migrations/${name}`, import.meta.url), 'utf8'),
@@ -144,6 +146,18 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
         offline_grace_until: new Date(now + 600_000),
       });
       expect((await client.query('SELECT * FROM billing_customer')).rowCount).toBe(0);
+      expect(
+        (
+          await client.query(
+            "SELECT count(*)::int AS linked FROM provider_event WHERE provider='apple' AND account_id IS NOT NULL",
+          )
+        ).rows,
+      ).toEqual([{ linked: 1 }]);
+      // No price in the signed transaction: the App Store catalogue applies.
+      expect(
+        (await client.query('SELECT amount_minor,currency FROM billing_subscription'))
+          .rows,
+      ).toEqual([{ amount_minor: expect.any(Number) as number, currency: 'eur' }]);
       expect(
         (
           await client.query(
@@ -288,6 +302,8 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
                     id: 'price_test',
                     product: 'prod_test',
                     recurring: { interval: 'month' },
+                    unit_amount: 799,
+                    currency: 'eur',
                   },
                 },
               ],
@@ -297,6 +313,22 @@ describe.skipIf(!process.env.APPLE_TEST_DATABASE_URL)(
       };
       expect(await deliver(event)).toEqual({ duplicateOrIgnored: false });
       expect((await entitlement()).tier).toBe('pro');
+      // Support sees which account each provider event concerns.
+      expect(
+        (
+          await client.query(
+            "SELECT DISTINCT account_id FROM provider_event WHERE provider='stripe'",
+          )
+        ).rows,
+      ).toEqual([{ account_id: accountId }]);
+      // Metrics use the price billed on the subscription item.
+      expect(
+        (
+          await client.query(
+            "SELECT amount_minor,currency FROM billing_subscription WHERE provider='stripe'",
+          )
+        ).rows,
+      ).toEqual([{ amount_minor: 799, currency: 'eur' }]);
       expect(await deliver(event)).toEqual({ duplicateOrIgnored: true });
       expect(
         await deliver({

@@ -95,15 +95,22 @@ export interface AdminFinancialEvent {
   full_reversal: boolean;
   provider_occurred_at: string;
 }
+export type AdminAuditDetails = Record<string, string | number | boolean | null>;
 export interface AdminAuditEntry {
   id: string;
   actor_id: string | null;
   action: string;
   target_id: string;
+  target_account_id?: string | null;
   reason: string;
   result: string;
   request_id: string;
+  details?: AdminAuditDetails | null;
   created_at: string;
+}
+export interface AdminAuditLog {
+  entries: (AdminAuditEntry & { actor_email?: string | null })[];
+  nextCursor?: string | null;
 }
 export interface AdminUserDetail {
   account: {
@@ -159,6 +166,8 @@ export interface AdminUserDetail {
     starts_at?: string;
     ends_at: string;
     revoked_at: string | null;
+    reason?: string | null;
+    created_by?: string | null;
   }[];
   referrals: {
     id: string;
@@ -169,9 +178,113 @@ export interface AdminUserDetail {
   }[];
   audit?: AdminAuditEntry[];
   auditReads?: { count: number; lastAt: string | null };
+  providerEvents?: AdminProviderEvent[];
 }
 export interface CampaignCreated {
   id: string;
   secret: string;
   link?: string;
+}
+export interface SupportGrantResult {
+  grantId: string;
+  accountId: string;
+  days: number;
+  endsAt: string;
+  replayed: boolean;
+}
+export interface DeviceActionResult {
+  deviceId: string;
+  accountId: string;
+  platform: 'macos' | 'windows';
+  changed: boolean;
+  replayed: boolean;
+}
+export type ExternalAuditAction = 'user.sessions.revoke';
+export interface ExternalAuditInput {
+  idempotencyKey: string;
+  reason: string;
+  action: ExternalAuditAction;
+  targetAccountId: string;
+  result: 'requested' | 'succeeded' | 'failed';
+  details?: {
+    webSessions?: number;
+    oauthRefreshTokens?: number;
+    oauthAccessTokens?: number;
+    errorCode?: string;
+  };
+}
+export interface ExternalAuditRecorded {
+  recorded: true;
+  authUserId: string;
+}
+export interface AdminFinancialEvents {
+  events: (AdminFinancialEvent & {
+    account_id: string | null;
+    email: string | null;
+  })[];
+  nextCursor: string | null;
+}
+export interface AdminProviderEvent {
+  provider: 'stripe' | 'apple';
+  provider_event_id: string;
+  event_type: string;
+  state: 'received' | 'applied' | 'ignored' | 'failed';
+  error_code: string | null;
+  received_at: string;
+  processed_at?: string | null;
+  account_id?: string | null;
+}
+export interface AdminProviderEvents {
+  events: AdminProviderEvent[];
+  nextCursor?: string | null;
+}
+export interface AdminAlerts {
+  failed_webhooks: number;
+  failed_webhooks_24h: number;
+  open_disputes: number;
+  unpaid_subscriptions: number;
+  duplicate_subscriptions: number;
+  refunds_24h: number;
+  failed_payments_24h: number;
+  checkedAt: string;
+}
+export interface ProviderEventReplay {
+  provider: 'stripe';
+  eventId: string;
+  state: string;
+  errorCode: string | null;
+  accountId: string | null;
+}
+export interface AdminMetrics {
+  subscribers: {
+    provider: 'stripe' | 'app_store';
+    billing_interval: 'month' | 'year';
+    status: 'trialing' | 'active' | 'past_due' | 'grace';
+    environment: 'Production' | 'Sandbox';
+    count: number;
+  }[];
+  mrr: {
+    provider: 'stripe' | 'app_store';
+    currency: string;
+    mrr_minor: number;
+    arr_minor: number;
+    subscriptions: number;
+    estimated_subscriptions: number;
+  }[];
+  signups: { day: string; count: number }[];
+  activeAccounts: { active_7d: number; active_30d: number };
+  grants: { source: string; count: number }[];
+  collectedThisMonth: {
+    currency: string;
+    paid_minor: number;
+    refunded_minor: number;
+    invoices: number;
+  }[];
+  downloads: {
+    platform: 'macos' | 'windows';
+    app_version: string;
+    last_7d: number;
+    last_30d: number;
+  }[];
+  generatedAt: string;
 }

@@ -93,4 +93,46 @@ describe('database migrations', () => {
     );
     expect(migration).toContain('expires_at timestamptz NOT NULL');
   });
+
+  it('adds support grants and a structured audit without personal data', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0024_admin_support.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain(
+      "CHECK (source IN ('invitation', 'referral', 'legacy', 'support'))",
+    );
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS target_account_id uuid');
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS details jsonb');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS operations_request');
+    expect(migration).toContain(') >= 3 THEN');
+    expect(migration).not.toMatch(/^\s*CREATE (TABLE|INDEX) (?!IF NOT EXISTS)/m);
+    expect(migration).not.toMatch(/^\s*CREATE FUNCTION /m);
+    expect(migration).not.toContain('account_contact');
+  });
+
+  it('links provider events to accounts without touching their payloads', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0025_provider_event_account.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS account_id uuid');
+    expect(migration).toContain('CREATE INDEX IF NOT EXISTS provider_event_failed_idx');
+    expect(migration).toContain('FROM billing_financial_event financial');
+    expect(migration).not.toMatch(/^\s*CREATE (TABLE|INDEX) (?!IF NOT EXISTS)/m);
+    expect(migration).not.toContain('payload_sha256');
+  });
+
+  it('stores subscription prices without changing existing rows', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0026_subscription_price.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS amount_minor integer');
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS currency text');
+    expect(migration).not.toMatch(/^\s*(UPDATE|DELETE|DROP)\b/m);
+  });
 });

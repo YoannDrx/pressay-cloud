@@ -39,6 +39,13 @@ const transactionSchema = z.object({
   appAccountToken: z.uuid().optional(),
   revocationDate: z.number().int().positive().optional(),
   isUpgraded: z.boolean().optional(),
+  // Price paid for this transaction in milliunits of `currency` (App Store
+  // Server API 1.10+); absent on older transactions.
+  price: z.number().int().nonnegative().optional(),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/)
+    .optional(),
 });
 
 type AppleTransaction = z.infer<typeof transactionSchema>;
@@ -65,6 +72,45 @@ interface AppleSubscriptionRecord {
   periodStartsAtMs: number;
   periodEndsAtMs: number;
   cancelAtPeriodEnd: boolean;
+  price: { amountMinor: number; currency: string };
+}
+
+/**
+ * Price of an App Store transaction in minor units. Apple reports milliunits
+ * (7990 for 7.99 EUR); currencies without decimals (JPY) or with three
+ * (KWD) are converted with their ISO 4217 exponent. Without a price in the
+ * transaction, the configured App Store catalogue price is used.
+ */
+export function appleTransactionPrice(
+  transaction: Pick<AppleTransaction, 'price' | 'currency'>,
+  interval: BillingInterval,
+): { amountMinor: number; currency: string } {
+  if (transaction.price !== undefined && transaction.currency) {
+    let digits: number;
+    try {
+      digits =
+        new Intl.NumberFormat('en', {
+          style: 'currency',
+          currency: transaction.currency,
+        }).resolvedOptions().maximumFractionDigits ?? 2;
+    } catch {
+      digits = 2;
+    }
+    return {
+      amountMinor: Math.round(transaction.price / 10 ** (3 - Math.min(digits, 3))),
+      currency: transaction.currency.toLowerCase(),
+    };
+  }
+  const environment = getEnvironment();
+  return {
+    amountMinor:
+      interval === 'year'
+        ? (environment.PRESSAY_APP_STORE_ANNUAL_AMOUNT_MINOR ??
+          environment.PRESSAY_PRO_ANNUAL_AMOUNT_MINOR)
+        : (environment.PRESSAY_APP_STORE_MONTHLY_AMOUNT_MINOR ??
+          environment.PRESSAY_PRO_MONTHLY_AMOUNT_MINOR),
+    currency: environment.PRESSAY_PRO_CURRENCY,
+  };
 }
 
 export interface AppleWebhookResult {
@@ -225,8 +271,9 @@ async function applyAppleSubscription(
     rows = await getSql().query(
       `WITH incoming AS (
         INSERT INTO provider_event (
-          provider, provider_event_id, payload_sha256, event_type, provider_occurred_at
-        ) VALUES ('apple', $1, decode($2, 'hex'), $3, to_timestamp($4 / 1000.0))
+          provider, provider_event_id, payload_sha256, event_type, provider_occurred_at,
+          account_id
+        ) VALUES ('apple', $1, decode($2, 'hex'), $3, to_timestamp($4 / 1000.0), $5)
         ${RETRYABLE_PROVIDER_EVENT_CONFLICT}
         RETURNING provider_event_id
       ), customer_upsert AS (
@@ -249,12 +296,13 @@ async function applyAppleSubscription(
         INSERT INTO billing_subscription (
           account_id, provider, provider_subscription_id, provider_product_id,
           status, billing_interval, current_period_starts_at,
-          current_period_ends_at, cancel_at_period_end, provider_event_occurred_at, apple_environment
+          current_period_ends_at, cancel_at_period_end, provider_event_occurred_at, apple_environment,
+          amount_minor, currency
         )
         SELECT
           $5, 'app_store', $6, $7, $8, $9,
           to_timestamp($10 / 1000.0), to_timestamp($11 / 1000.0),
-          $12, to_timestamp($4 / 1000.0), $13
+          $12, to_timestamp($4 / 1000.0), $13, $14::integer, $15::text
         FROM eligible_account
         ON CONFLICT (provider, provider_subscription_id) DO UPDATE SET
           provider_product_id = EXCLUDED.provider_product_id,
@@ -264,6 +312,8 @@ async function applyAppleSubscription(
           current_period_ends_at = EXCLUDED.current_period_ends_at,
           cancel_at_period_end = EXCLUDED.cancel_at_period_end,
           provider_event_occurred_at = EXCLUDED.provider_event_occurred_at,
+          amount_minor = EXCLUDED.amount_minor,
+          currency = EXCLUDED.currency,
           updated_at = now()
         WHERE billing_subscription.account_id = EXCLUDED.account_id
           AND billing_subscription.apple_environment = EXCLUDED.apple_environment
@@ -302,6 +352,8 @@ async function applyAppleSubscription(
         record.periodEndsAtMs,
         record.cancelAtPeriodEnd,
         record.environment,
+        record.price.amountMinor,
+        record.price.currency,
       ],
     );
   } catch (error) {
@@ -554,6 +606,7 @@ export async function restoreAppStorePurchase(
     periodStartsAtMs: current.transaction.purchaseDate,
     periodEndsAtMs: policy.periodEndsAtMs,
     cancelAtPeriodEnd: cancelAtPeriodEnd(current.renewal),
+    price: appleTransactionPrice(current.transaction, current.product.interval),
   });
   if (result.errorCode === 'apple_customer_conflict') {
     throw new ApiError(
@@ -730,6 +783,7 @@ export async function processAppleWebhook(
         periodStartsAtMs: transaction.purchaseDate,
         periodEndsAtMs: policy.periodEndsAtMs,
         cancelAtPeriodEnd: cancelAtPeriodEnd(decoded.renewal),
+        price: appleTransactionPrice(transaction, target.product.interval),
       });
     } catch (error) {
       if (

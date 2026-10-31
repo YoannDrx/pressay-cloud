@@ -12,6 +12,7 @@ const deletedSchema = z.object({
 
 export interface PurgeResult {
   idempotencyRecords: number;
+  operationsRequests: number;
   usageReservations: number;
   providerEvents: number;
   legacySessions: number;
@@ -44,6 +45,16 @@ export async function purgeExpiredRecords(): Promise<PurgeResult> {
       WHERE expires_at < now()
         AND created_at < now() - make_interval(days => $1)
         AND state <> 'processing'
+      LIMIT $2
+    )`,
+    [environment.PRESSAY_RETENTION_IDEMPOTENCY_DAYS, PURGE_BATCH_SIZE],
+  );
+  // Idempotency keys of administrative actions (no personal data).
+  const operationsRequests = await deleteBatch(
+    `DELETE FROM operations_request
+    WHERE ctid IN (
+      SELECT ctid FROM operations_request
+      WHERE created_at < now() - make_interval(days => $1)
       LIMIT $2
     )`,
     [environment.PRESSAY_RETENTION_IDEMPOTENCY_DAYS, PURGE_BATCH_SIZE],
@@ -99,6 +110,7 @@ export async function purgeExpiredRecords(): Promise<PurgeResult> {
   );
   return {
     idempotencyRecords,
+    operationsRequests,
     usageReservations,
     providerEvents,
     legacySessions,

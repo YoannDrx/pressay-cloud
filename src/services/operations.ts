@@ -13,6 +13,27 @@ export async function accountId(userId: string): Promise<string> {
   if (!rows[0]) throw new ApiError(403, 'account_not_active', 'Account unavailable');
   return String(rows[0].id);
 }
+/**
+ * Structured audit details: identifiers, durations, counts and error codes.
+ * Never personal data (no email, name or customer-provided text).
+ */
+export type AuditDetails = Readonly<Record<string, string | number | boolean | null>>;
+export interface AuditContext {
+  /** Account the entry concerns, when there is one. */
+  targetAccountId?: string | null;
+  details?: AuditDetails;
+}
+/** Refuses values that could carry personal data into the ledger. */
+export function assertSafeAuditDetails(details: AuditDetails): void {
+  const entries = Object.entries(details);
+  if (entries.length > 20) throw new Error('Too many audit details');
+  for (const [key, value] of entries) {
+    if (!/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(key))
+      throw new Error(`Invalid audit detail key: ${key}`);
+    if (typeof value === 'string' && (value.length > 120 || value.includes('@')))
+      throw new Error(`Unsafe audit detail value: ${key}`);
+  }
+}
 export async function audit(
   actor: string,
   action: string,
@@ -20,10 +41,21 @@ export async function audit(
   reason: string,
   requestId: string,
   result = 'succeeded',
+  context: AuditContext = {},
 ) {
+  if (context.details) assertSafeAuditDetails(context.details);
   await getSql().query(
-    'INSERT INTO operations_audit(actor_id,action,target_id,reason,request_id,result) VALUES($1,$2,$3,$4,$5,$6)',
-    [actor, action, target, reason, requestId, result],
+    'INSERT INTO operations_audit(actor_id,action,target_id,reason,request_id,result,target_account_id,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
+    [
+      actor,
+      action,
+      target,
+      reason,
+      requestId,
+      result,
+      context.targetAccountId ?? null,
+      context.details ? JSON.stringify(context.details) : null,
+    ],
   );
 }
 /**

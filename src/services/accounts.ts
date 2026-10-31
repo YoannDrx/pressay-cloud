@@ -6,6 +6,7 @@ import type {
   BootstrapAccountRequest,
   Device,
   Entitlement,
+  RevokedDevice,
   UsageSnapshot,
 } from '../contracts/account.js';
 import {
@@ -13,6 +14,7 @@ import {
   devicePlatformSchema,
   entitlementSchema,
   meResponseSchema,
+  revokedDeviceSchema,
   usageSnapshotSchema,
 } from '../contracts/account.js';
 import { getSql } from '../db/client.js';
@@ -265,6 +267,44 @@ export async function listDevices(authUserId: string): Promise<readonly Device[]
     }),
     limit: 3,
   }).devices;
+}
+
+/** The 20 most recently revoked devices of an account, for restoration. */
+export async function listRevokedDevices(
+  authUserId: string,
+): Promise<readonly RevokedDevice[]> {
+  const rows = await getSql().query(
+    `SELECT
+      d.id,
+      d.display_name,
+      d.platform,
+      d.app_variant,
+      d.app_version,
+      d.approved_at IS NOT NULL AS approved,
+      d.last_seen_at,
+      d.created_at,
+      d.revoked_at
+    FROM pressay_device d
+    JOIN pressay_account a ON a.id = d.account_id
+    WHERE a.auth_user_id = $1 AND a.status = 'active' AND d.revoked_at IS NOT NULL
+    ORDER BY d.revoked_at DESC
+    LIMIT 20`,
+    [authUserId],
+  );
+  return rows.map((unparsedRow) => {
+    const row = deviceRowSchema.parse(unparsedRow);
+    return revokedDeviceSchema.parse({
+      id: row.id,
+      displayName: row.display_name,
+      platform: row.platform,
+      appVariant: row.app_variant,
+      appVersion: row.app_version,
+      approved: row.approved,
+      lastSeenAt: iso(row.last_seen_at),
+      createdAt: iso(row.created_at),
+      revokedAt: iso(unparsedRow.revoked_at as Date | string),
+    });
+  });
 }
 
 export async function revokeDevice(

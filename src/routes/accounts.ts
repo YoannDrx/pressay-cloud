@@ -24,6 +24,7 @@ import {
   getMe,
   getUsage,
   listDevices,
+  listRevokedDevices,
   requestAccountDeletion,
   revokeDevice,
 } from '../services/accounts.js';
@@ -32,6 +33,7 @@ import {
   signEntitlementSnapshot,
 } from '../services/entitlements.js';
 import { exportAccountData } from '../services/data-export.js';
+import { restoreOwnDevice } from '../services/admin-support.js';
 import type { AppEnvironment } from '../types.js';
 
 export const accountRoutes = new Hono<AppEnvironment>();
@@ -101,13 +103,30 @@ accountRoutes.get('/me/export', rateLimit('account_export', 5), async (context) 
 });
 
 accountRoutes.get('/devices', async (context) => {
+  const includeRevoked = context.req.query('include') === 'revoked';
   return context.json(
     deviceListResponseSchema.parse({
       devices: await listDevices(context.get('authUserId')),
       limit: 3,
+      ...(includeRevoked
+        ? { revokedDevices: await listRevokedDevices(context.get('authUserId')) }
+        : {}),
     }),
   );
 });
+
+/**
+ * A revoked computer is refused at sign-in until its owner restores it here,
+ * within the three active devices.
+ */
+accountRoutes.post(
+  '/devices/:id/restore',
+  rateLimit('device_restore', 10),
+  async (context) => {
+    const deviceId = zUuid(context.req.param('id'));
+    return context.json(await restoreOwnDevice(context.get('authUserId'), deviceId));
+  },
+);
 
 accountRoutes.delete('/devices/:id', async (context) => {
   const deviceId = zUuid(context.req.param('id'));
