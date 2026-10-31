@@ -17,6 +17,10 @@
     {
       "path": "/v1/internal/jobs/referral-rewards",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/v1/internal/jobs/ops-digest",
+      "schedule": "0 6 * * *"
     }
   ],
   "rewrites": [

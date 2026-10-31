@@ -178,6 +178,7 @@ export interface AdminUserDetail {
   }[];
   audit?: AdminAuditEntry[];
   auditReads?: { count: number; lastAt: string | null };
+  providerEvents?: AdminProviderEvent[];
 }
 export interface CampaignCreated {
   id: string;
@@ -215,4 +216,42 @@ export interface ExternalAuditInput {
 export interface ExternalAuditRecorded {
   recorded: true;
   authUserId: string;
+}
+export interface AdminFinancialEvents {
+  events: (AdminFinancialEvent & {
+    account_id: string | null;
+    email: string | null;
+  })[];
+  nextCursor: string | null;
+}
+export interface AdminProviderEvent {
+  provider: 'stripe' | 'apple';
+  provider_event_id: string;
+  event_type: string;
+  state: 'received' | 'applied' | 'ignored' | 'failed';
+  error_code: string | null;
+  received_at: string;
+  processed_at?: string | null;
+  account_id?: string | null;
+}
+export interface AdminProviderEvents {
+  events: AdminProviderEvent[];
+  nextCursor?: string | null;
+}
+export interface AdminAlerts {
+  failed_webhooks: number;
+  failed_webhooks_24h: number;
+  open_disputes: number;
+  unpaid_subscriptions: number;
+  duplicate_subscriptions: number;
+  refunds_24h: number;
+  failed_payments_24h: number;
+  checkedAt: string;
+}
+export interface ProviderEventReplay {
+  provider: 'stripe';
+  eventId: string;
+  state: string;
+  errorCode: string | null;
+  accountId: string | null;
 }

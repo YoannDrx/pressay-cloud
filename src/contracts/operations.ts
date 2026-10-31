@@ -92,6 +92,27 @@ export const auditQuerySchema = z.object({
   reads: z.enum(['include', 'exclude']).default('include'),
   cursor: z.coerce.number().int().positive().optional(),
 });
+export const financialEventKinds = [
+  'invoice_paid',
+  'invoice_failed',
+  'invoice_voided',
+  'refund',
+  'dispute',
+] as const;
+export const financialEventQuerySchema = z.object({
+  kind: z.enum(['', ...financialEventKinds]).default(''),
+  // Disputes whose latest status still needs an answer or a decision.
+  open: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  cursor: z.string().max(200).optional(),
+});
+export const providerEventQuerySchema = z.object({
+  state: z.enum(['', 'received', 'applied', 'ignored', 'failed']).default(''),
+  provider: z.enum(['', 'stripe', 'apple']).default(''),
+  cursor: z.string().max(300).optional(),
+});
 export const userQuerySchema = z.object({
   search: z.string().trim().max(120).default(''),
   // Apple Sandbox access (App Review, TestFlight) is never counted as paid Pro.
@@ -194,6 +215,49 @@ export const deviceActionResultSchema = z.object({
   platform: z.enum(['macos', 'windows']),
   changed: z.boolean(),
   replayed: z.boolean().default(false),
+});
+export const adminFinancialEventsSchema = z.object({
+  events: z.array(
+    z.object({
+      provider_event_id: z.string(),
+      provider_object_id: z.string(),
+      provider_subscription_id: z.string().nullable(),
+      kind: z.enum(financialEventKinds),
+      status: z.string(),
+      amount_minor: integer,
+      currency: z.string(),
+      full_reversal: z.boolean(),
+      provider_occurred_at: date,
+      account_id: z.uuid().nullable(),
+      email: z.string().nullable(),
+    }),
+  ),
+  nextCursor: z.string().nullable(),
+});
+export const adminProviderEventsSchema = z.object({
+  events: z.array(
+    z.object({
+      provider: z.enum(['stripe', 'apple']),
+      provider_event_id: z.string(),
+      event_type: z.string(),
+      state: z.enum(['received', 'applied', 'ignored', 'failed']),
+      error_code: z.string().nullable(),
+      received_at: date,
+      processed_at: nullableDate,
+      account_id: z.uuid().nullable(),
+    }),
+  ),
+  nextCursor: z.string().nullable(),
+});
+export const adminAlertsSchema = z.object({
+  failed_webhooks: integer,
+  failed_webhooks_24h: integer,
+  open_disputes: integer,
+  unpaid_subscriptions: integer,
+  duplicate_subscriptions: integer,
+  refunds_24h: integer,
+  failed_payments_24h: integer,
+  checkedAt: z.string(),
 });
 export const adminUserDetailSchema = z.object({
   account: z.object({
@@ -317,4 +381,5 @@ export const adminUserDetailSchema = z.object({
   ),
   audit: z.array(auditEntrySchema),
   auditReads: z.object({ count: integer, lastAt: nullableDate }),
+  providerEvents: adminProviderEventsSchema.shape.events,
 });

@@ -48,6 +48,8 @@ const environmentSchema = z
       .transform((value) => value === 'true'),
     PRESSAY_CAMPAIGN_SECRET: z.string().min(32).optional(),
     CRON_SECRET: z.string().min(32).optional(),
+    // Optional: the daily operations digest is also posted here as JSON.
+    OPS_ALERT_WEBHOOK_URL: z.url().startsWith('https://').optional(),
     PRESSAY_CLOUD_PROCESSING_ENABLED: z
       .enum(['true', 'false'])
       .default('false')

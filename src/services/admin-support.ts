@@ -56,7 +56,7 @@ function databaseError(error: unknown): ApiError | null {
  * Audit `requested`, run the action, then audit its outcome. A refused action
  * is recorded as `failed` with its error code only.
  */
-async function audited<T>(
+export async function audited<T>(
   operator: Operator,
   action: string,
   target: string,

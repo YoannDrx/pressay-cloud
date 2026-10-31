@@ -193,7 +193,7 @@ export async function customerDetail(
   // account or one of its grants by id as text. Reads are counted, not
   // listed, to keep actions visible.
   const targets = [id, ...grants.map((grant) => String(grant.id))];
-  const [audit, reads] = await Promise.all([
+  const [audit, reads, providerEvents] = await Promise.all([
     sql.query(
       `SELECT id::text AS id,actor_id,action,target_id,target_account_id,reason,result,
         request_id,details,created_at
@@ -206,6 +206,12 @@ export async function customerDetail(
     sql.query(
       `SELECT count(*)::int AS count,max(created_at) AS last_at
       FROM operations_audit WHERE target_id=$1 AND reason='personal_data_read'`,
+      [id],
+    ),
+    sql.query(
+      `SELECT provider,provider_event_id,event_type,state,error_code,received_at,processed_at,
+        account_id
+      FROM provider_event WHERE account_id=$1 ORDER BY received_at DESC LIMIT 20`,
       [id],
     ),
   ]);
@@ -263,6 +269,7 @@ export async function customerDetail(
     grants,
     referrals,
     audit,
+    providerEvents,
     auditReads: {
       count: Number(reads[0]?.count ?? 0),
       lastAt: (reads[0]?.last_at as unknown) ?? null,

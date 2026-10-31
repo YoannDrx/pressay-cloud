@@ -54,7 +54,8 @@ export const RETRYABLE_PROVIDER_EVENT_CONFLICT = `ON CONFLICT (provider, provide
           state = 'received',
           error_code = NULL,
           processed_at = NULL,
-          payload_sha256 = EXCLUDED.payload_sha256
+          payload_sha256 = EXCLUDED.payload_sha256,
+          account_id = COALESCE(EXCLUDED.account_id, provider_event.account_id)
         WHERE provider_event.state = 'failed'`;
 
 /** Conflict clause for terminal `ignored` records: only a failed attempt is replaced. */

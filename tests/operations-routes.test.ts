@@ -122,6 +122,7 @@ describe('Cloud administrative authorization', () => {
     '/v1/admin/users/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970?include=identity',
     '/v1/admin/audit-log',
     '/v1/admin/audit-log?action=grant&reads=exclude',
+    '/v1/admin/billing/financial-events?kind=refund',
   ])('requires a recent second factor to read personal data at %s', async (path) => {
     const response = await app.request(path, {
       headers: { authorization: `Bearer ${await token({ pressay_step_up_at: 0 })}` },
@@ -139,6 +140,7 @@ describe('Cloud administrative authorization', () => {
     ['/v1/admin/devices/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970/revoke', {}],
     ['/v1/admin/devices/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970/restore', {}],
     ['/v1/admin/users/aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970/deletion', {}],
+    ['/v1/admin/billing/events/stripe/evt_123/replay', {}],
     [
       '/v1/admin/audit/external',
       {

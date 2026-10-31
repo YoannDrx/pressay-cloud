@@ -111,4 +111,17 @@ describe('database migrations', () => {
     expect(migration).not.toMatch(/^\s*CREATE FUNCTION /m);
     expect(migration).not.toContain('account_contact');
   });
+
+  it('links provider events to accounts without touching their payloads', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0025_provider_event_account.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS account_id uuid');
+    expect(migration).toContain('CREATE INDEX IF NOT EXISTS provider_event_failed_idx');
+    expect(migration).toContain('FROM billing_financial_event financial');
+    expect(migration).not.toMatch(/^\s*CREATE (TABLE|INDEX) (?!IF NOT EXISTS)/m);
+    expect(migration).not.toContain('payload_sha256');
+  });
 });

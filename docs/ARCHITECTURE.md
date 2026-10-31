@@ -205,6 +205,28 @@ email, filtered by action (exact or dotted prefix), target (account id or exact
 target), UTC day range (`from`, `to`) and `reads=exclude` to hide
 personal-data reads.
 
+## Billing visibility
+
+`provider_event.account_id` (migration 0025) records the account a Stripe or
+Apple event was applied to; events with a financial ledger row were attached
+on migration. Owner-only routes:
+
+- `GET /v1/admin/billing/financial-events?kind=&open=true&cursor=` (step-up,
+  audited as `admin.billing.financial.read`): refunds, disputes (`open=true`
+  keeps disputes whose latest status still needs action), failed payments,
+  with the account and its email, 50 per page.
+- `GET /v1/admin/billing/events?state=failed&provider=&cursor=`: provider
+  events with their account, 50 per page.
+- `POST /v1/admin/billing/events/stripe/:id/replay` (step-up, reason, audited
+  as `billing.event.replay`): re-reads a `failed` event from Stripe (kept 30
+  days), refuses the other Stripe mode, and runs the webhook projection, which
+  only takes over failed rows. Apple notifications are retried by Apple.
+- `GET /v1/admin/alerts`: failed webhooks (total and 24 h), open disputes,
+  unpaid Production subscriptions, accounts with more than one live
+  Production subscription, refunds and failed payments in 24 h. The daily
+  `GET /v1/internal/jobs/ops-digest` cron logs these counters and posts them
+  to `OPS_ALERT_WEBHOOK_URL` when set.
+
 ## Retention matrix
 
 | Data                                                           | Retention                                                                   | Mechanism               |
