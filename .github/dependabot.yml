@@ -13,6 +13,10 @@ updates:
       # Match the deployed Node.js 22 runtime.
       - dependency-name: '@types/node'
         update-types: [version-update:semver-major]
+      # Each stripe-node major pins a new Stripe API version (v23: 2026-09-30.endive).
+      # Move it with a deliberate API version upgrade and webhook check.
+      - dependency-name: stripe
+        update-types: [version-update:semver-major]
     groups:
       runtime:
         dependency-type: production
