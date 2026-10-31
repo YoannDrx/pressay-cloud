@@ -35,6 +35,7 @@ const stripe = new Stripe('sk_test_placeholder', {
 const payload = JSON.stringify({
   id: 'evt_pressay_subscription_1',
   object: 'event',
+  livemode: false,
   api_version: '2026-07-29.dahlia',
   created: 1_786_924_800,
   type: 'customer.subscription.updated',
@@ -197,6 +198,7 @@ describe('Stripe webhook processing', () => {
     const invoicePayload = JSON.stringify({
       id: 'evt_pressay_invoice_paid_1',
       object: 'event',
+      livemode: false,
       api_version: '2026-07-29.dahlia',
       created: 1_786_924_900,
       type: 'invoice.paid',
@@ -243,6 +245,7 @@ describe('Stripe webhook processing', () => {
     const refundPayload = JSON.stringify({
       id: 'evt_pressay_refund_1',
       object: 'event',
+      livemode: false,
       api_version: '2026-07-29.dahlia',
       created: 1_786_924_950,
       type: 'charge.refunded',
@@ -342,6 +345,7 @@ describe('Stripe webhook processing', () => {
     const disputePayload = JSON.stringify({
       id: 'evt_pressay_dispute_won',
       object: 'event',
+      livemode: false,
       api_version: '2026-07-29.dahlia',
       created: 1_786_925_000,
       type: 'charge.dispute.closed',
@@ -383,6 +387,7 @@ describe('Stripe webhook processing', () => {
       const disputePayload = JSON.stringify({
         id: `evt_pressay_dispute_${status}`,
         object: 'event',
+        livemode: false,
         api_version: '2026-07-29.dahlia',
         created: 1_786_925_000,
         type: 'charge.dispute.closed',
@@ -417,6 +422,7 @@ describe('Stripe webhook processing', () => {
     const disputePayload = JSON.stringify({
       id: 'evt_pressay_dispute_lost',
       object: 'event',
+      livemode: false,
       api_version: '2026-07-29.dahlia',
       created: 1_786_925_000,
       type: 'charge.dispute.closed',
@@ -500,6 +506,69 @@ describe('Stripe webhook processing', () => {
       'billing.duplicate_subscription',
     );
     warn.mockRestore();
+  });
+
+  it('ignores a test-mode event in production without touching Postgres', async () => {
+    process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
+    process.env.ENTITLEMENT_SIGNING_KEY_ID = 'pressay-entitlement-production-2026-01';
+    process.env.STRIPE_SECRET_KEY = 'rk_live_placeholder';
+    clearEnvironmentCacheForTests();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await expect(processStripeWebhook(payload, sign(payload))).resolves.toEqual({
+        duplicateOrIgnored: true,
+        code: 'stripe_livemode_mismatch',
+      });
+      expect(query).not.toHaveBeenCalled();
+      expect(retrieveSubscription).not.toHaveBeenCalled();
+      expect(String(warn.mock.calls[0]?.[0])).toContain(
+        'billing.webhook.livemode_mismatch',
+      );
+    } finally {
+      warn.mockRestore();
+      delete process.env.PRESSAY_DEPLOYMENT_ENV;
+      delete process.env.ENTITLEMENT_SIGNING_KEY_ID;
+      clearEnvironmentCacheForTests();
+    }
+  });
+
+  it.each([
+    ['a live-mode event', { livemode: true }],
+    ['an event without a mode', { livemode: undefined }],
+  ])('ignores %s outside production without touching Postgres', async (_, mode) => {
+    const body = JSON.stringify({ ...JSON.parse(payload), ...mode });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await expect(processStripeWebhook(body, sign(body))).resolves.toEqual({
+        duplicateOrIgnored: true,
+        code: 'stripe_livemode_mismatch',
+      });
+      expect(query).not.toHaveBeenCalled();
+      expect(retrieveSubscription).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('applies a live-mode event in production', async () => {
+    process.env.PRESSAY_DEPLOYMENT_ENV = 'production';
+    process.env.ENTITLEMENT_SIGNING_KEY_ID = 'pressay-entitlement-production-2026-01';
+    process.env.STRIPE_SECRET_KEY = 'rk_live_placeholder';
+    clearEnvironmentCacheForTests();
+    query
+      .mockResolvedValueOnce([{ product_matches: true, customer_matches: true }])
+      .mockResolvedValueOnce([{ state: 'applied' }]);
+    const body = JSON.stringify({ ...JSON.parse(payload), livemode: true });
+    try {
+      await expect(processStripeWebhook(body, sign(body))).resolves.toEqual({
+        duplicateOrIgnored: false,
+      });
+      expect(retrieveSubscription).toHaveBeenCalledWith('sub_pressay_1');
+    } finally {
+      delete process.env.PRESSAY_DEPLOYMENT_ENV;
+      delete process.env.ENTITLEMENT_SIGNING_KEY_ID;
+      clearEnvironmentCacheForTests();
+    }
   });
 
   it('rejects an invalid signature before touching Postgres', async () => {

@@ -339,6 +339,17 @@ export function getEnvironment(source: NodeJS.ProcessEnv = process.env): Environ
   return environment;
 }
 
+/**
+ * Stripe mode a deployment operates in: live objects in production, test
+ * objects everywhere else. The parser above pins the Stripe key prefix to the
+ * same rule, so objects and events from the other mode never belong here.
+ */
+export function expectedStripeLivemode(
+  environment: Pick<Environment, 'PRESSAY_DEPLOYMENT_ENV'>,
+): boolean {
+  return environment.PRESSAY_DEPLOYMENT_ENV === 'production';
+}
+
 export function clearEnvironmentCacheForTests(): void {
   cachedEnvironment = undefined;
 }

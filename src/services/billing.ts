@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { getStripe } from '../billing/stripe-client.js';
 import { billingStatusSchema, type BillingInterval } from '../contracts/billing.js';
 import { getSql } from '../db/client.js';
-import { getEnvironment } from '../env.js';
+import { expectedStripeLivemode, getEnvironment } from '../env.js';
 import { ApiError, stableErrorCode } from '../lib/errors.js';
 import { writeLog } from '../lib/logger.js';
 import {
@@ -875,7 +875,7 @@ async function projectStripeEvent(
 export async function processStripeWebhook(
   rawBody: string,
   signature: string,
-): Promise<{ duplicateOrIgnored: boolean }> {
+): Promise<{ duplicateOrIgnored: boolean; code?: string }> {
   const environment = getEnvironment();
   const webhookSecret = environment.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret)
@@ -885,6 +885,23 @@ export async function processStripeWebhook(
     event = getStripe().webhooks.constructEvent(rawBody, signature, webhookSecret);
   } catch {
     throw new ApiError(401, 'invalid_stripe_signature', 'Invalid Stripe signature');
+  }
+  // A test-mode event must never change production billing state, and a live
+  // event must never be projected by staging. The check runs before any
+  // database write so a cross-mode event leaves no trace in Postgres.
+  //
+  // The event is acknowledged with 2xx rather than rejected: its signature is
+  // valid, so retrying cannot make it acceptable, and Stripe retries non-2xx
+  // deliveries for days before disabling the endpoint, which would also stop
+  // legitimate events. The warning log is what surfaces the misconfiguration.
+  if (event.livemode !== expectedStripeLivemode(environment)) {
+    writeLog('warn', 'billing.webhook.livemode_mismatch', {
+      provider: 'stripe',
+      code: 'stripe_livemode_mismatch',
+      event_livemode: event.livemode,
+      deployment: environment.PRESSAY_DEPLOYMENT_ENV,
+    });
+    return { duplicateOrIgnored: true, code: 'stripe_livemode_mismatch' };
   }
   const payloadHash = createHash('sha256').update(rawBody).digest('hex');
   try {

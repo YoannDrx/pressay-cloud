@@ -1,6 +1,10 @@
 import type Stripe from 'stripe';
 
-import { getEnvironment, requireEnvironmentValue } from '../env.js';
+import {
+  expectedStripeLivemode,
+  getEnvironment,
+  requireEnvironmentValue,
+} from '../env.js';
 import { getStripe } from './stripe-client.js';
 
 type StripeCatalogueClient = Pick<Stripe, 'accounts' | 'products' | 'prices'>;
@@ -38,7 +42,7 @@ export async function auditStripeCatalogue(
     environment.STRIPE_PRICE_PRO_ANNUAL,
     'STRIPE_PRICE_PRO_ANNUAL',
   );
-  const expectedLivemode = environment.PRESSAY_DEPLOYMENT_ENV === 'production';
+  const expectedLivemode = expectedStripeLivemode(environment);
 
   const [account, product, monthly, annual] = await Promise.all([
     // With no ID, Stripe returns the account represented by the API key. Using
