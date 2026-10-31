@@ -42,6 +42,10 @@ export async function transformWithOpenAI(
         language: input.language ?? null,
       }),
       max_output_tokens: 8_192,
+      // Kept on purpose: `prompt_cache_options.ttl`, which the SDK suggests
+      // instead, sets a *minimum* cache lifetime and does not cap retention.
+      // `in_memory` is the documented privacy promise (SECURITY.md).
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
       prompt_cache_retention: 'in_memory',
       store: false,
     },
