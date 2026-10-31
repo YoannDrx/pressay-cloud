@@ -4,6 +4,7 @@ import type { SyncChangeInput } from '../contracts/sync.js';
 import { syncChangesResponseSchema } from '../contracts/sync.js';
 import { getSql } from '../db/client.js';
 import { ApiError } from '../lib/errors.js';
+import { paidCloudEntitlementPredicate } from './cloud-access.js';
 
 const syncRowSchema = z.object({
   sequence_id: z.coerce.number().int().positive(),
@@ -61,6 +62,7 @@ export async function enrollSyncDevice(
         AND d.revoked_at IS NULL
         AND e.tier = 'pro'
         AND e.valid_until > now()
+        AND ${paidCloudEntitlementPredicate('e')}
     )
     UPDATE pressay_device d
     SET
@@ -123,6 +125,7 @@ export async function listSyncDevices(
       AND approver.revoked_at IS NULL
       AND entitlement.tier = 'pro'
       AND entitlement.valid_until > now()
+      AND ${paidCloudEntitlementPredicate('entitlement')}
       AND target.public_key IS NOT NULL
       AND target.revoked_at IS NULL
     ORDER BY target.created_at ASC`,
@@ -162,7 +165,8 @@ export async function getSyncDeviceEnvelope(
       AND device.revoked_at IS NULL
       AND device.encrypted_account_key IS NOT NULL
       AND entitlement.tier = 'pro'
-      AND entitlement.valid_until > now()`,
+      AND entitlement.valid_until > now()
+      AND ${paidCloudEntitlementPredicate('entitlement')}`,
     [deviceId, authUserId],
   );
   const result = z.object({ encrypted_account_key: z.string() }).safeParse(rows[0]);
@@ -209,6 +213,7 @@ export async function approveSyncDevice(
       AND approver.revoked_at IS NULL
       AND e.tier = 'pro'
       AND e.valid_until > now()
+      AND ${paidCloudEntitlementPredicate('e')}
     RETURNING target.id`,
     [targetDeviceId, approverDeviceId, authUserId, encryptedAccountKey.toString('hex')],
   );
@@ -272,6 +277,7 @@ export async function beginSyncRecovery(
       AND device.revoked_at IS NULL
       AND entitlement.tier = 'pro'
       AND entitlement.valid_until > now()
+      AND ${paidCloudEntitlementPredicate('entitlement')}
       AND recovery.code_hash = decode($4, 'hex')
       AND (device.public_key IS NULL OR device.public_key = decode($3, 'hex'))
     RETURNING encode(recovery.encrypted_account_key, 'base64') AS encrypted_account_key`,
@@ -313,6 +319,7 @@ export async function completeSyncRecovery(
         AND device.revoked_at IS NULL
         AND entitlement.tier = 'pro'
         AND entitlement.valid_until > now()
+        AND ${paidCloudEntitlementPredicate('entitlement')}
         AND recovery.code_hash = decode($3, 'hex')
         AND (
           device.approved_at IS NULL
@@ -351,7 +358,8 @@ async function assertApprovedSyncDevice(
       AND d.approved_at IS NOT NULL
       AND d.revoked_at IS NULL
       AND e.tier = 'pro'
-      AND e.valid_until > now()`,
+      AND e.valid_until > now()
+      AND ${paidCloudEntitlementPredicate('e')}`,
     [deviceId, authUserId],
   );
   const row = z.object({ account_id: z.uuid() }).safeParse(rows[0]);

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { getSql } from '../db/client.js';
 import { ApiError } from '../lib/errors.js';
+import { sandboxEntitlementUnlocksCloud } from './cloud-access.js';
 
 export type UsageKind = 'cloud_transcription' | 'cloud_transformation';
 
@@ -59,6 +60,25 @@ export async function reserveUsage(
 ): Promise<UsageReservation> {
   if (requestHash.length !== 32) {
     throw new ApiError(422, 'invalid_request_hash', 'Request hash is invalid');
+  }
+  if (!sandboxEntitlementUnlocksCloud()) {
+    // The database reservation only checks tier = 'pro'. A Pro entitlement that
+    // comes from a free Apple Sandbox purchase must not consume paid Cloud
+    // processing in production (see cloud-access.ts).
+    const entitlement = await getSql().query(
+      `SELECT e.sandbox
+      FROM pressay_account pa
+      JOIN entitlement e ON e.account_id = pa.id
+      WHERE pa.auth_user_id = $1 AND pa.status = 'active'`,
+      [authUserId],
+    );
+    if (z.object({ sandbox: z.literal(true) }).safeParse(entitlement[0]).success) {
+      throw new ApiError(
+        403,
+        'cloud_entitlement_required',
+        'A current Pro entitlement is required',
+      );
+    }
   }
   try {
     const rows = await getSql().query(

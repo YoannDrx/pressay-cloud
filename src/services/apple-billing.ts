@@ -137,10 +137,12 @@ function storedSubscriptionId(
  * Sandbox purchases are free. Production accepts them only because App Review
  * buys in the Sandbox against the production API. To keep a public TestFlight
  * build (or anyone else holding a Sandbox account) from obtaining lasting Pro:
- * - an optional allowlist restricts Sandbox grants to review accounts;
+ * - only accounts on APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS receive anything, and
+ *   an empty list grants nothing (fail closed);
  * - access ends at the earlier of Apple's expiry and the first Sandbox
  *   purchase + APPLE_SANDBOX_MAX_GRANT_HOURS, so renewals cannot extend it;
- * - the entitlement is marked sandbox and never receives offline grace.
+ * - the entitlement is marked sandbox, never receives offline grace and never
+ *   unlocks paid Cloud services (see cloud-access.ts).
  */
 function applySandboxPolicy(
   environment: AppleEnvironment,
@@ -156,7 +158,7 @@ function applySandboxPolicy(
     return { allowed: true, periodEndsAtMs };
   }
   const allowlist = settings.APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS;
-  if (allowlist.length > 0 && !allowlist.includes(accountId.toLowerCase())) {
+  if (!allowlist.includes(accountId.toLowerCase())) {
     writeLog('warn', 'billing.apple_sandbox_rejected', {
       code: 'sandbox_account_not_allowed',
     });

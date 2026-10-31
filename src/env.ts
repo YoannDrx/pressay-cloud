@@ -107,9 +107,10 @@ const environmentSchema = z
       .max(3650)
       .default(400),
     // App Review and TestFlight purchase in the Apple Sandbox against the
-    // production API, so production keeps verifying Sandbox payloads. Sandbox
-    // access is capped (see APPLE_SANDBOX_MAX_GRANT_HOURS) and can be limited
-    // to review accounts or switched off outside review windows.
+    // production API, so production keeps verifying Sandbox payloads. In
+    // production a Sandbox purchase grants Pro only to the Pressay account IDs
+    // in APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS (empty list: no account), for at
+    // most APPLE_SANDBOX_MAX_GRANT_HOURS, and never unlocks paid Cloud services.
     APPLE_SANDBOX_IN_PRODUCTION_ENABLED: z
       .enum(['true', 'false'])
       .default('true')

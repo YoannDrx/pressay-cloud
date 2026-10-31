@@ -31,7 +31,8 @@ account UUID, then refreshes status through the App Store Server API. Version 2
 notifications are verified against Apple's published roots before they update
 billing state. Production also verifies Apple Sandbox purchases used during App
 Review, with separate subscription IDs, no paid-customer linkage and no extra
-offline grace. Paid subscriptions always take precedence. Stripe and Apple subscriptions are projected through one
+offline grace; they grant Pro only to allowlisted review accounts and never
+unlock Cloud processing or sync. Paid subscriptions always take precedence. Stripe and Apple subscriptions are projected through one
 entitlement recomputation function, so an expired provider cannot revoke another
 provider's still-current entitlement.
 

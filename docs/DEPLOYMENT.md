@@ -98,10 +98,33 @@ same account ID in both modes.
 
 App Store development and staging accept only Apple Sandbox payloads.
 Production verifies Production first, then Sandbox for App Review and TestFlight
-while `APPLE_SANDBOX_IN_PRODUCTION_ENABLED=true`. In production a Sandbox grant
-lasts at most `APPLE_SANDBOX_MAX_GRANT_HOURS` from the first Sandbox purchase,
-carries no offline grace, is flagged `entitlement.sandbox`, and can be limited to
-review accounts with `APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS`.
+while `APPLE_SANDBOX_IN_PRODUCTION_ENABLED=true`. In production a Sandbox
+purchase grants Pro only to the Pressay accounts listed in
+`APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS`; with an empty list no account receives
+anything (restores answer 403 `app_store_sandbox_not_allowed`, notifications are
+recorded as ignored with `sandbox_account_not_allowed`). A Sandbox grant lasts at
+most `APPLE_SANDBOX_MAX_GRANT_HOURS` from the first Sandbox purchase, carries no
+offline grace and is flagged `entitlement.sandbox`. A flagged entitlement keeps
+Pro in the app but never unlocks the paid Cloud services: Cloud processing
+answers 403 `cloud_entitlement_required` and E2EE sync refuses the device.
+
+### App Review accounts
+
+Before each App Store submission backed by the production API:
+
+1. Create the demo account given to App Review in App Store Connect and sign in
+   with it once in the submitted build, so its Pressay Cloud account exists.
+2. Read its account UUID (`pressay_account.id`, also shown as `id` by the
+   owner-only `GET /v1/admin/users?search=<email>`).
+3. Add it to `APPLE_SANDBOX_ALLOWED_ACCOUNT_IDS` in the production Vercel
+   project (comma-separated UUIDs) and redeploy production so the value is read.
+4. Ask App Review, in the review notes, to purchase with that demo account. A
+   Sandbox purchase made from any other Pressay account grants nothing.
+5. Remove the UUID once the review is complete.
+
+If App Review must exercise Cloud processing or sync, give the demo account a
+time-limited invitation grant (see [OPERATIONS_ROLLOUT.md](OPERATIONS_ROLLOUT.md))
+instead of relying on the Sandbox purchase.
 Both paths require Apple's signature, the configured bundle and an account-bound
 transaction, followed by a status refresh against the matching Apple Server API.
 Sandbox subscriptions use a separate ID namespace and never change the production
