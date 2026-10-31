@@ -108,6 +108,20 @@ const environmentSchema = z
       .min(90)
       .max(3650)
       .default(400),
+    // Audit ledger: personal-data reads and exports are kept this long...
+    PRESSAY_RETENTION_AUDIT_READ_DAYS: z.coerce
+      .number()
+      .int()
+      .min(30)
+      .max(3650)
+      .default(365),
+    // ...and administrative actions (grants, devices, deletions, roles) this long.
+    PRESSAY_RETENTION_AUDIT_ACTION_DAYS: z.coerce
+      .number()
+      .int()
+      .min(365)
+      .max(3650)
+      .default(1825),
     // Waitlist entries are deleted this long after their consent.
     PRESSAY_RETENTION_WAITLIST_DAYS: z.coerce
       .number()

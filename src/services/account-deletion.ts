@@ -100,6 +100,36 @@ async function failDeletionJob(job: DeletionJob, errorCode: string): Promise<voi
   );
 }
 
+/**
+ * Invitations reserved to the deleted person's address forget it. One that
+ * could still be redeemed is revoked first: without its address it would
+ * become redeemable by anyone holding the code. Runs before the contact row
+ * is erased; replaying it changes nothing.
+ */
+export async function forgetReservedInvitations(accountId: string): Promise<number> {
+  const rows = await getSql().query(
+    `WITH contact AS (
+      SELECT lower(email) AS email FROM account_contact WHERE account_id = $1
+    ), forgotten AS (
+      UPDATE access_campaign campaign
+      SET restricted_email = NULL,
+        status = CASE
+          WHEN campaign.status IN ('provisioning', 'active')
+            AND campaign.expires_at > now()
+            AND campaign.redemptions < campaign.max_redemptions
+          THEN 'revoked'
+          ELSE campaign.status
+        END
+      FROM contact
+      WHERE campaign.restricted_email = contact.email
+      RETURNING 1
+    )
+    SELECT count(*)::integer AS forgotten FROM forgotten`,
+    [accountId],
+  );
+  return Number(rows[0]?.forgotten ?? 0);
+}
+
 async function executeDeletionJob(job: DeletionJob): Promise<boolean> {
   if (job.stripeCustomerId) {
     try {
@@ -136,6 +166,7 @@ async function executeDeletionJob(job: DeletionJob): Promise<boolean> {
   }
 
   try {
+    await forgetReservedInvitations(job.accountId);
     const rows = await getSql().query(
       'SELECT complete_pressay_account_deletion($1) AS completed',
       [job.accountId],

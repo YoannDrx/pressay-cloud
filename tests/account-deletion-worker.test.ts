@@ -38,6 +38,7 @@ describe('account deletion worker', () => {
   it('deletes the Stripe customer before cascading the local identity', async () => {
     query
       .mockResolvedValueOnce([job])
+      .mockResolvedValueOnce([{ forgotten: 1 }])
       .mockResolvedValueOnce([{ completed: true }])
       .mockResolvedValueOnce([]);
     deleteStripeCustomer.mockResolvedValue({
@@ -53,13 +54,17 @@ describe('account deletion worker', () => {
     });
     expect(deleteStripeCustomer).toHaveBeenCalledWith(job.stripe_customer_id);
     expect(deleteWebIdentity).toHaveBeenCalledWith(job.auth_user_id);
-    expect(query.mock.calls[1]?.[0]).toContain('complete_pressay_account_deletion');
+    // Invitations reserved to the address forget it before the contact goes.
+    expect(query.mock.calls[1]?.[0]).toContain('restricted_email = NULL');
+    expect(query.mock.calls[1]?.[1]).toEqual([job.account_id]);
+    expect(query.mock.calls[2]?.[0]).toContain('complete_pressay_account_deletion');
   });
 
   it('completes when the web identity was already deleted', async () => {
     deleteWebIdentity.mockResolvedValue('absent');
     query
       .mockResolvedValueOnce([{ ...job, stripe_customer_id: null }])
+      .mockResolvedValueOnce([{ forgotten: 0 }])
       .mockResolvedValueOnce([{ completed: true }])
       .mockResolvedValueOnce([]);
     await expect(runAccountDeletionBatch()).resolves.toMatchObject({ completed: 1 });
@@ -112,6 +117,9 @@ describe('account deletion worker', () => {
     query.mockImplementation((sql: string) => {
       if (sql.includes('complete_pressay_account_deletion')) {
         return Promise.resolve([{ completed: true }]);
+      }
+      if (sql.includes('restricted_email = NULL')) {
+        return Promise.resolve([{ forgotten: 0 }]);
       }
       if (remaining === 0) return Promise.resolve([]);
       remaining -= 1;

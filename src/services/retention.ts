@@ -18,6 +18,22 @@ export interface PurgeResult {
   legacySessions: number;
   legacyVerifications: number;
   waitlistEntries: number;
+  auditReads: number;
+  auditActions: number;
+  restrictedEmails: number;
+}
+
+/** Audit reasons of reads and exports, kept PRESSAY_RETENTION_AUDIT_READ_DAYS. */
+export const AUDIT_READ_REASONS = ['personal_data_read', 'data_export'];
+
+async function countUpdated(sql: string, values: unknown[]): Promise<number> {
+  const rows = await getSql().query(
+    `WITH updated AS (${sql} RETURNING 1)
+    SELECT count(*)::integer AS deleted_count FROM updated`,
+    values,
+  );
+  const parsed = deletedSchema.safeParse(rows[0]);
+  return parsed.success ? parsed.data.deleted_count : 0;
 }
 
 async function deleteBatch(sql: string, values: unknown[]): Promise<number> {
@@ -33,8 +49,8 @@ async function deleteBatch(sql: string, values: unknown[]): Promise<number> {
 /**
  * Remove operational records that have outlived their purpose (see the
  * retention matrix in docs/ARCHITECTURE.md). Never touches accounting records:
- * provider events that carry a billing_financial_event row, the financial
- * ledger itself and operations_audit are kept.
+ * provider events that carry a billing_financial_event row and the financial
+ * ledger itself are kept.
  */
 export async function purgeExpiredRecords(): Promise<PurgeResult> {
   const environment = getEnvironment();
@@ -108,6 +124,51 @@ export async function purgeExpiredRecords(): Promise<PurgeResult> {
     )`,
     [environment.PRESSAY_RETENTION_WAITLIST_DAYS, PURGE_BATCH_SIZE],
   );
+  // Audit ledger: reads and exports expire sooner than actions.
+  const auditReads = await deleteBatch(
+    `DELETE FROM operations_audit
+    WHERE ctid IN (
+      SELECT ctid FROM operations_audit
+      WHERE reason = ANY($3::text[])
+        AND created_at < now() - make_interval(days => $1)
+      LIMIT $2
+    )`,
+    [
+      environment.PRESSAY_RETENTION_AUDIT_READ_DAYS,
+      PURGE_BATCH_SIZE,
+      AUDIT_READ_REASONS,
+    ],
+  );
+  const auditActions = await deleteBatch(
+    `DELETE FROM operations_audit
+    WHERE ctid IN (
+      SELECT ctid FROM operations_audit
+      WHERE NOT reason = ANY($3::text[])
+        AND created_at < now() - make_interval(days => $1)
+      LIMIT $2
+    )`,
+    [
+      environment.PRESSAY_RETENTION_AUDIT_ACTION_DAYS,
+      PURGE_BATCH_SIZE,
+      AUDIT_READ_REASONS,
+    ],
+  );
+  // An invitation reserved to an address keeps that address only while it can
+  // still be redeemed.
+  const restrictedEmails = await countUpdated(
+    `UPDATE access_campaign SET restricted_email = NULL
+    WHERE id IN (
+      SELECT id FROM access_campaign
+      WHERE restricted_email IS NOT NULL
+        AND (
+          expires_at < now()
+          OR status IN ('revoked', 'failed')
+          OR redemptions >= max_redemptions
+        )
+      LIMIT $1
+    )`,
+    [PURGE_BATCH_SIZE],
+  );
   return {
     idempotencyRecords,
     operationsRequests,
@@ -116,5 +177,8 @@ export async function purgeExpiredRecords(): Promise<PurgeResult> {
     legacySessions,
     legacyVerifications,
     waitlistEntries,
+    auditReads,
+    auditActions,
+    restrictedEmails,
   };
 }
