@@ -58,9 +58,15 @@ describe('bearer token verification', () => {
         sid: 'session',
         pressay_step_up_method: 'totp',
         pressay_step_up_at: Math.floor(Date.now() / 1000),
+        pressay_auth_at: Math.floor(Date.now() / 1000),
       }),
     );
-    expect(identity).toMatchObject({ id: 'auth-user', webProxy: false, stepUpAt: 0 });
+    expect(identity).toMatchObject({
+      id: 'auth-user',
+      webProxy: false,
+      stepUpAt: 0,
+      signedInAt: 0,
+    });
   });
 
   it('tolerates a trailing slash difference in the configured issuer', async () => {
@@ -121,6 +127,24 @@ describe('bearer token verification', () => {
       ),
     );
     expect(proxy).toMatchObject({ webProxy: true, stepUpAt: now });
+  });
+
+  it('reads the session sign-in time only from web proxy tokens', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const proxy = await verifyBearerToken(
+      await externalAccessToken(
+        { token_use: 'pressay_web_proxy', sid: 'web-session', pressay_auth_at: now },
+        { audience: 'pressay-web-proxy' },
+      ),
+    );
+    expect(proxy).toMatchObject({ webProxy: true, signedInAt: now, stepUpAt: 0 });
+    const ignored = await verifyBearerToken(
+      await externalAccessToken(
+        { token_use: 'pressay_web_proxy', pressay_auth_at: String(now) },
+        { audience: 'pressay-web-proxy' },
+      ),
+    );
+    expect(ignored).toMatchObject({ webProxy: true, signedInAt: 0 });
   });
 
   it('rejects a proxy-audience token that does not declare proxy use', async () => {

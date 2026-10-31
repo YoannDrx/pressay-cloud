@@ -4,6 +4,7 @@ import type { AppEnvironment } from '../types.js';
 import { requireAuthentication } from '../lib/auth-middleware.js';
 import { ApiError } from '../lib/errors.js';
 import { rateLimit } from '../lib/rate-limit.js';
+import { isRecentAuthentication } from '../lib/recent-authentication.js';
 import { getSql } from '../db/client.js';
 import { getEnvironment } from '../env.js';
 import { getStripe } from '../billing/stripe-client.js';
@@ -68,8 +69,7 @@ function personalDataRead(path: string): boolean {
 }
 /** Second-factor proof bound to the web session, less than ten minutes old. */
 function requireRecentStepUp(sessionId: string, at: number): void {
-  const now = Math.floor(Date.now() / 1000);
-  if (!sessionId || !Number.isFinite(at) || at <= now - 600 || at > now + 30)
+  if (!sessionId || !isRecentAuthentication(at))
     throw new ApiError(
       403,
       'step_up_required',

@@ -141,6 +141,13 @@ Stripe customer, then calls the web `POST /api/internal/identity-deletion`
 (HS256, audience `pressay-web-internal`) and only then removes the Cloud account;
 any failure is retried with backoff.
 
+A web proxy token may delete the account only with proof, bound to its web
+session, of a sign-in (`pressay_auth_at`) or a second-factor step-up
+(`pressay_step_up_at`) less than ten minutes old, matching the web session
+`freshAge`. Otherwise the API answers 403 `recent_authentication_required`
+(`maxAgeSeconds`), and the web asks the user to sign in again. Desktop OAuth
+access tokens keep their existing deletion contract.
+
 ## Retention matrix
 
 | Data                                                           | Retention                                                                   | Mechanism               |

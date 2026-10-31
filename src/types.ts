@@ -4,6 +4,7 @@ export interface AppVariables {
   authEmail: string;
   authEmailVerified: boolean;
   authStepUpAt: number;
+  authSignedInAt: number;
   authSessionId: string;
   authWebProxy: boolean;
   operationsAccountId: string;

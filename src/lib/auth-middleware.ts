@@ -34,6 +34,8 @@ export interface VerifiedIdentity {
   verified: boolean;
   sessionId: string;
   stepUpAt: number;
+  /** When the web session signed in (seconds), from web proxy tokens only. */
+  signedInAt: number;
   webProxy: boolean;
 }
 
@@ -127,6 +129,10 @@ function identityFromPayload(payload: JWTPayload, webProxy: boolean): VerifiedId
       typeof payload.pressay_step_up_at === 'number'
         ? payload.pressay_step_up_at
         : 0,
+    signedInAt:
+      webProxy && typeof payload.pressay_auth_at === 'number'
+        ? payload.pressay_auth_at
+        : 0,
   };
 }
 
@@ -136,7 +142,8 @@ function identityFromPayload(payload: JWTPayload, webProxy: boolean): VerifiedId
  *
  * Audience separation: Mac OAuth access tokens carry the API audience and never
  * a `token_use` claim. Web proxy tokens carry the dedicated proxy audience and
- * `token_use=pressay_web_proxy`; only they may present step-up proof. During
+ * `token_use=pressay_web_proxy`; only they may present step-up or sign-in
+ * freshness proof. During
  * the web rollout, proxy tokens minted with the API audience are still accepted
  * while `PRESSAY_WEB_PROXY_LEGACY_AUDIENCE_ALLOWED=true`.
  */
@@ -279,6 +286,7 @@ export const requireAuthentication = createMiddleware<AppEnvironment>(
     context.set('authEmail', identity.email);
     context.set('authEmailVerified', identity.verified);
     context.set('authStepUpAt', identity.stepUpAt);
+    context.set('authSignedInAt', identity.signedInAt);
     context.set('authSessionId', identity.sessionId);
     context.set('authWebProxy', identity.webProxy);
     await next();

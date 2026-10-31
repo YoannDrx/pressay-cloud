@@ -18,7 +18,21 @@ vi.mock('../src/services/accounts.ts', () => ({
 
 import app from '../src/app.ts';
 import { clearEnvironmentCacheForTests } from '../src/env.ts';
-import { bearer, configureTestIdentity, webProxyToken } from './helpers/identity.ts';
+import {
+  bearer,
+  configureTestIdentity,
+  configureTestJwks,
+  externalAccessToken,
+  webProxyToken,
+} from './helpers/identity.ts';
+
+/** Web proxy identity whose session signed in a moment ago. */
+async function freshBearer(claims: Record<string, unknown> = {}) {
+  return bearer('auth-user', {
+    pressay_auth_at: Math.floor(Date.now() / 1000) - 5,
+    ...claims,
+  });
+}
 
 function desktopBody() {
   return {
@@ -50,6 +64,7 @@ describe('account routes', () => {
     bootstrapAccount.mockReset();
     bootstrapWebAccount.mockReset();
     listDevices.mockReset();
+    requestAccountDeletion.mockReset();
     process.env.DATABASE_URL = 'postgresql://example.test/pressay';
     clearEnvironmentCacheForTests();
     configureTestIdentity();
@@ -214,7 +229,7 @@ describe('account routes', () => {
     requestAccountDeletion.mockResolvedValue(undefined);
     const plain = await app.request('/v1/me', {
       method: 'DELETE',
-      headers: await bearer(),
+      headers: await freshBearer(),
     });
     expect(plain.status).toBe(202);
     expect(requestAccountDeletion).toHaveBeenLastCalledWith('auth-user', {
@@ -222,7 +237,7 @@ describe('account routes', () => {
     });
     await app.request('/v1/me?acknowledgeAppleSubscription=true', {
       method: 'DELETE',
-      headers: await bearer(),
+      headers: await freshBearer(),
     });
     expect(requestAccountDeletion).toHaveBeenLastCalledWith('auth-user', {
       acknowledgeAppleSubscription: true,
@@ -244,7 +259,7 @@ describe('account routes', () => {
     );
     const response = await app.request('/v1/me', {
       method: 'DELETE',
-      headers: await bearer(),
+      headers: await freshBearer(),
     });
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({
@@ -252,6 +267,74 @@ describe('account routes', () => {
         code: 'apple_subscription_active',
         manageSubscriptionsUrl: 'https://apps.apple.com/account/subscriptions',
       },
+    });
+  });
+
+  describe('account deletion freshness', () => {
+    const now = () => Math.floor(Date.now() / 1000);
+
+    async function deleteWith(headers: Record<string, string>) {
+      return app.request('/v1/me', { method: 'DELETE', headers });
+    }
+
+    it('accepts a web session that signed in within ten minutes', async () => {
+      requestAccountDeletion.mockResolvedValue(undefined);
+      const response = await deleteWith(
+        await bearer('auth-user', { pressay_auth_at: now() - 9 * 60 }),
+      );
+      expect(response.status).toBe(202);
+      expect(requestAccountDeletion).toHaveBeenCalledOnce();
+    });
+
+    it('accepts a recent second-factor step-up on an older web session', async () => {
+      requestAccountDeletion.mockResolvedValue(undefined);
+      const response = await deleteWith(
+        await bearer('auth-user', {
+          pressay_auth_at: now() - 3 * 24 * 3600,
+          pressay_step_up_method: 'totp',
+          pressay_step_up_at: now() - 60,
+        }),
+      );
+      expect(response.status).toBe(202);
+    });
+
+    it.each([
+      ['no freshness proof', {}],
+      ['a sign-in older than ten minutes', { pressay_auth_at: now() - 601 }],
+      ['a sign-in dated in the future', { pressay_auth_at: now() + 120 }],
+      ['a non-numeric sign-in time', { pressay_auth_at: String(now()) }],
+      [
+        'a step-up older than ten minutes',
+        { pressay_step_up_method: 'totp', pressay_step_up_at: now() - 601 },
+      ],
+      [
+        'a step-up with an unknown method',
+        { pressay_step_up_method: 'password', pressay_step_up_at: now() },
+      ],
+      ['a fresh sign-in not bound to a session', { pressay_auth_at: now(), sid: '' }],
+    ])('refuses a web session with %s', async (_label, claims) => {
+      const response = await deleteWith(await bearer('auth-user', claims));
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        error: { code: 'recent_authentication_required', maxAgeSeconds: '600' },
+      });
+      expect(requestAccountDeletion).not.toHaveBeenCalled();
+    });
+
+    it('keeps the desktop OAuth deletion contract unchanged', async () => {
+      requestAccountDeletion.mockResolvedValue(undefined);
+      await configureTestJwks();
+      try {
+        const response = await deleteWith({
+          authorization: `Bearer ${await externalAccessToken()}`,
+        });
+        expect(response.status).toBe(202);
+        expect(requestAccountDeletion).toHaveBeenCalledWith('auth-user', {
+          acknowledgeAppleSubscription: false,
+        });
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
   });
 });
