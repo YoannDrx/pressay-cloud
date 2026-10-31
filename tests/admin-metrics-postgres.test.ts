@@ -102,6 +102,8 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
         email: 'owner@example.com',
         email_verified: true,
         token_use: 'pressay_web_proxy',
+        // Administrators have an Authenticator app.
+        pressay_two_factor: true,
         sid: 'session',
         // Aggregates only: no step-up needed.
         pressay_step_up_at: 0,

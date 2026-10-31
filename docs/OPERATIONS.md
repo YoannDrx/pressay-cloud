@@ -127,6 +127,37 @@ Never repair a right by editing the client or trusting a success URL.
    Pressay.
 5. Add a redaction regression test before re-enabling the route.
 
+## Administrator access recovery
+
+Administrators are `operations_member` rows (`owner`, `support`,
+`readonly`); every one needs an Authenticator app on their web account. Check
+`member.*` entries in the audit log after any of these steps.
+
+1. **A member lost their Authenticator app.** They sign in and use a backup
+   code from `/account/security` to enroll a new app. Without backup codes,
+   another owner removes them from `/admin/team`; the web identity's second
+   factor is then reset by an operator on the web database (remove the
+   person's `auth_two_factors` row and set `"twoFactorEnabled"` to false), the
+   person enrolls again and an owner adds them back.
+2. **No active owner is left** (the last owner's account was deleted). Add a
+   verified address you control to `PRESSAY_OPERATIONS_OWNER_EMAILS` in the
+   production environment and redeploy. Sign in on the site with that
+   address, enroll an Authenticator app, open `/admin`: the account becomes
+   owner (`member.owner.claimed`, alert sent). Remove the address from the
+   variable afterwards if it should not stay a recovery address.
+3. **The only owner is locked out but their account still exists.** Prefer
+   step 1 for that person. Otherwise, from a reviewed database session with a
+   restore point, demote them so step 2 applies:
+   `UPDATE operations_member SET role = 'readonly', updated_at = now() WHERE account_id = '<account id>';`
+4. **A member's account is compromised.** An owner removes the member in
+   `/admin/team`, then uses "Déconnecter partout" on that person's customer
+   record. If no owner can sign in, delete the row
+   (`DELETE FROM operations_member WHERE account_id = '<account id>';`) and
+   follow step 2.
+
+Never share a session or an Authenticator seed between people: add each
+person with their own account and the least role they need.
+
 ## Release and recovery evidence
 
 An incident or release gate is closed only when the register contains:

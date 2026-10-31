@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignJWT } from 'jose';
-const ownerAccount = vi.hoisted(() => vi.fn());
+const operationsMember = vi.hoisted(() => vi.fn());
 const createCampaign = vi.hoisted(() => vi.fn());
 const consume = vi.hoisted(() => vi.fn());
 const audit = vi.hoisted(() => vi.fn());
@@ -15,7 +15,7 @@ vi.mock('../src/services/accounts.ts', () => ({
   recordAccountContact: vi.fn(),
 }));
 vi.mock('../src/services/operations.ts', () => ({
-  ownerAccount,
+  operationsMember,
   createCampaign,
   audit,
   accountId: () => Promise.resolve('account'),
@@ -33,6 +33,7 @@ async function token(claims: Record<string, unknown> = {}) {
     sid: 'web-session',
     pressay_step_up_method: 'totp',
     pressay_step_up_at: Math.floor(Date.now() / 1000),
+    pressay_two_factor: true,
     ...claims,
   })
     .setProtectedHeader({ alg: 'HS256' })
@@ -58,6 +59,24 @@ async function create(claims: Record<string, unknown> = {}) {
     body: JSON.stringify(input),
   });
 }
+function member(role: 'owner' | 'support' | 'readonly') {
+  operationsMember.mockResolvedValue({
+    accountId: 'aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970',
+    role,
+    claimed: false,
+  });
+}
+async function call(method: string, path: string, body?: unknown, claims = {}) {
+  return app.request(`/v1/${path}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${await token(claims)}`,
+      'content-type': 'application/json',
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+}
+const ID = 'aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970';
 describe('Cloud administrative authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -65,7 +84,7 @@ describe('Cloud administrative authorization', () => {
     process.env.PRESSAY_INTERNAL_JWT_SECRET = secret;
     process.env.PRESSAY_INTERNAL_JWT_ISSUER = 'https://press-say.app/internal';
     clearEnvironmentCacheForTests();
-    ownerAccount.mockResolvedValue('aa72ef7f-a1a3-4cd9-ae1d-7cbf08a38970');
+    member('owner');
     createCampaign.mockResolvedValue({ id: 'campaign' });
   });
   it('rejects anonymous requests', async () => {
@@ -92,7 +111,7 @@ describe('Cloud administrative authorization', () => {
     expect(createCampaign).not.toHaveBeenCalled();
   });
   it('does not infer admin rights from possession of a session', async () => {
-    ownerAccount.mockResolvedValue(null);
+    operationsMember.mockResolvedValue(null);
     expect((await create()).status).toBe(403);
     expect(createCampaign).not.toHaveBeenCalled();
   });
@@ -243,5 +262,96 @@ describe('Cloud administrative authorization', () => {
         maxNetworkRetries: 0,
       },
     );
+  });
+  it('requires an Authenticator app on the web account of every administrator', async () => {
+    const response = await call('GET', 'admin/session', undefined, {
+      pressay_two_factor: false,
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'two_factor_required' },
+    });
+    // The flag only counts when it is exactly true.
+    expect(
+      (await call('GET', 'admin/session', undefined, { pressay_two_factor: 'true' }))
+        .status,
+    ).toBe(403);
+    expect(operationsMember).toHaveBeenCalledWith(
+      'stable-owner',
+      'owner@example.test',
+      true,
+      false,
+    );
+  });
+  it('tells a non-administrator apart from a member without Authenticator', async () => {
+    operationsMember.mockResolvedValue(null);
+    const response = await call('GET', 'admin/session', undefined, {
+      pressay_two_factor: false,
+    });
+    expect(await response.json()).toMatchObject({ error: { code: 'admin_required' } });
+  });
+  it.each(['owner', 'support', 'readonly'] as const)(
+    'returns the %s role to the web',
+    async (role) => {
+      member(role);
+      const response = await call('GET', 'admin/session', undefined, {
+        pressay_step_up_at: 0,
+      });
+      expect(await response.json()).toEqual({ role, accountId: ID });
+    },
+  );
+  it('keeps a read-only member away from every action', async () => {
+    member('readonly');
+    for (const [method, path, body] of [
+      ['POST', 'admin/campaigns', input],
+      ['POST', `admin/users/${ID}/grants`, { ...input, days: 30 }],
+      ['POST', `admin/devices/${ID}/revoke`, input],
+      ['POST', 'admin/members', { ...input, email: 'a@example.test', role: 'support' }],
+      [
+        'PATCH',
+        'admin/gates/direct/tax',
+        { reason: 'Checked', status: 'passed', evidence: 'x' },
+      ],
+    ] as const) {
+      const response = await call(method, path, body);
+      expect(response.status, path).toBe(403);
+      expect(await response.json()).toMatchObject({
+        error: { code: 'role_forbidden' },
+      });
+    }
+    expect(createCampaign).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect(consume).not.toHaveBeenCalled();
+    // Reads stay available.
+    query.mockResolvedValue([]);
+    expect((await call('GET', 'admin/users')).status).toBe(200);
+  });
+  it('lets support help customers but not touch billing or roles', async () => {
+    member('support');
+    expect((await call('POST', 'admin/campaigns', input)).status).toBe(201);
+    const promotion = await call('POST', 'admin/campaigns', {
+      ...input,
+      kind: 'stripe_discount',
+      discountPercent: 20,
+    });
+    expect(promotion.status).toBe(403);
+    expect(createCampaign).toHaveBeenCalledOnce();
+    query.mockResolvedValueOnce([{ kind: 'stripe_discount' }]);
+    expect(
+      (await call('POST', `admin/campaigns/${ID}/revoke`, { reason: 'Expired' }))
+        .status,
+    ).toBe(403);
+    for (const [method, path] of [
+      ['POST', 'admin/billing/events/stripe/evt_1/replay'],
+      ['POST', 'admin/rewards/process'],
+      ['POST', `admin/members/${ID}/role`],
+      ['GET', 'admin/members'],
+    ] as const) {
+      const response = await call(method, path, method === 'GET' ? undefined : input);
+      expect(response.status, path).toBe(403);
+      expect(await response.json()).toMatchObject({
+        error: { code: 'role_forbidden' },
+      });
+    }
   });
 });

@@ -58,27 +58,59 @@ export async function audit(
     ],
   );
 }
+export type OperationsRole = 'owner' | 'support' | 'readonly';
+export const operationsRoles: readonly OperationsRole[] = [
+  'owner',
+  'support',
+  'readonly',
+];
+export interface OperationsMember {
+  accountId: string;
+  role: OperationsRole;
+  /** True when this request claimed the owner seat (break-glass). */
+  claimed: boolean;
+}
+
 /**
- * The operations owner is a singleton. A verified login whose email is listed
- * in PRESSAY_OPERATIONS_OWNER_EMAILS claims it once; afterwards only the
- * recorded account is the owner, whatever the env list says.
+ * The administrator behind a verified session, or null. Members and their
+ * role live in operations_member. A verified address listed in
+ * PRESSAY_OPERATIONS_OWNER_EMAILS becomes owner only while no active owner
+ * exists (first set-up, or recovery after the last owner's account was
+ * deleted), and only from a session with an Authenticator app.
  */
-export async function ownerAccount(userId: string, email: string, verified: boolean) {
+export async function operationsMember(
+  userId: string,
+  email: string,
+  verified: boolean,
+  twoFactor: boolean,
+): Promise<OperationsMember | null> {
+  if (!verified) return null;
   const id = await accountId(userId);
+  let claimed = false;
   if (
-    verified &&
+    twoFactor &&
     getEnvironment().PRESSAY_OPERATIONS_OWNER_EMAILS.includes(email.toLowerCase())
   ) {
-    await getSql().query(
-      `INSERT INTO operations_owner(singleton,account_id) VALUES(true,$1) ON CONFLICT DO NOTHING`,
+    const rows = await getSql().query(
+      `INSERT INTO operations_member (account_id, role)
+      SELECT $1, 'owner'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM operations_member member
+        JOIN pressay_account account ON account.id = member.account_id
+        WHERE member.role = 'owner' AND account.status = 'active'
+      )
+      ON CONFLICT (account_id) DO UPDATE SET role = 'owner', updated_at = now()
+      RETURNING account_id`,
       [id],
     );
+    claimed = rows.length > 0;
   }
   const rows = await getSql().query(
-    'SELECT account_id FROM operations_owner WHERE account_id=$1',
+    'SELECT role FROM operations_member WHERE account_id=$1',
     [id],
   );
-  return verified && rows.length ? id : null;
+  const role = operationsRoles.find((candidate) => candidate === rows[0]?.role);
+  return role ? { accountId: id, role, claimed } : null;
 }
 export function secretHash(secret: string) {
   return createHash('sha256').update(secret).digest('hex');

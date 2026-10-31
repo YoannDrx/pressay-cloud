@@ -150,10 +150,11 @@ access tokens keep their existing deletion contract.
 
 ## Support reads
 
-`/v1/admin/*` is reserved to the single operations owner. Reads that return a
-person's data (`users`, `users/:id`, `referrals`, `audit-log`) need a second-factor step-up
-less than ten minutes old and are written to `operations_audit` as
-`personal_data_read`, without the search terms.
+`/v1/admin/*` is reserved to administrators (`operations_member`, migration 0030) whose web account has an Authenticator app (web proxy claim
+`pressay_two_factor`, otherwise 403 `two_factor_required`). Reads that return a
+person's data (`users`, `users/:id`, `referrals`, `audit-log`, `members`) need a
+second-factor step-up less than ten minutes old and are written to
+`operations_audit` as `personal_data_read`, without the search terms.
 
 `GET /v1/admin/users` recognises the format of the search: `cus_…` (Stripe
 customer), `sub_…` (Stripe subscription), a decimal App Store original
@@ -171,9 +172,37 @@ its grants (reads are counted, not listed). With `?include=identity`, the web
 also reads linked sign-in methods, passkeys and sessions from its own database,
 and the API records that read as `admin.user.identity.read`.
 
+## Administrators and roles
+
+| Role       | May                                                                                                                              |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `owner`    | Everything: billing (Stripe promotions, webhook replay, referral rewards), launch gates, administrators.                         |
+| `support`  | Every read; support actions (grants, devices, deletions, invitations, sign-out everywhere); waitlist and access-request exports. |
+| `readonly` | Every read except the administrator list and personal-data exports.                                                              |
+
+`src/lib/admin-roles.ts` maps each route to its least role: an unlisted
+mutation is owner-only and a test fails until every route is classified. A
+refused request answers 403 `role_forbidden`. `GET /v1/admin/session` returns
+the caller's role and account.
+
+Owners manage administrators (step-up, reason, idempotency key):
+`GET /v1/admin/members`, `POST /v1/admin/members` (`email` of an active account
+with that verified address, `role`), `POST /v1/admin/members/:id/role`,
+`POST /v1/admin/members/:id/remove`. `set_pressay_operations_member` locks
+the owner rows and refuses to demote or remove the last active owner. Each
+change is audited (`member.role.set`, `member.remove`, with previous and new
+role) and posted to `OPS_ALERT_WEBHOOK_URL` when set (account ids and roles,
+no address).
+
+A verified address listed in `PRESSAY_OPERATIONS_OWNER_EMAILS` becomes owner
+only while no active owner exists, from a session with an Authenticator app
+(first set-up, recovery): audited as `member.owner.claimed` and alerted. The
+recovery procedure is in `docs/OPERATIONS.md`. Migration 0030 made the previous
+single owner an `owner` member; `operations_owner` is no longer read.
+
 ## Support actions
 
-Every support mutation needs the owner role, a step-up less than ten minutes
+Every support mutation needs the `support` or `owner` role, a step-up less than ten minutes
 old, a reason (3 to 500 characters) and the form's idempotency key; it counts
 towards the 20 administrative mutations per minute. Each action writes a
 `*.requested` entry, then its outcome (`succeeded`, `replayed` or `failed`

@@ -36,6 +36,8 @@ export interface VerifiedIdentity {
   stepUpAt: number;
   /** When the web session signed in (seconds), from web proxy tokens only. */
   signedInAt: number;
+  /** The web user has an Authenticator app (TOTP), from web proxy tokens only. */
+  twoFactor: boolean;
   webProxy: boolean;
 }
 
@@ -133,6 +135,7 @@ function identityFromPayload(payload: JWTPayload, webProxy: boolean): VerifiedId
       webProxy && typeof payload.pressay_auth_at === 'number'
         ? payload.pressay_auth_at
         : 0,
+    twoFactor: webProxy && payload.pressay_two_factor === true,
   };
 }
 
@@ -331,6 +334,7 @@ export const requireAuthentication = createMiddleware<AppEnvironment>(
     context.set('authEmailVerified', identity.verified);
     context.set('authStepUpAt', identity.stepUpAt);
     context.set('authSignedInAt', identity.signedInAt);
+    context.set('authTwoFactor', identity.twoFactor);
     context.set('authSessionId', identity.sessionId);
     context.set('authWebProxy', identity.webProxy);
     await next();
