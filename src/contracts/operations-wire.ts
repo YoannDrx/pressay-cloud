@@ -95,15 +95,22 @@ export interface AdminFinancialEvent {
   full_reversal: boolean;
   provider_occurred_at: string;
 }
+export type AdminAuditDetails = Record<string, string | number | boolean | null>;
 export interface AdminAuditEntry {
   id: string;
   actor_id: string | null;
   action: string;
   target_id: string;
+  target_account_id?: string | null;
   reason: string;
   result: string;
   request_id: string;
+  details?: AdminAuditDetails | null;
   created_at: string;
+}
+export interface AdminAuditLog {
+  entries: (AdminAuditEntry & { actor_email?: string | null })[];
+  nextCursor?: string | null;
 }
 export interface AdminUserDetail {
   account: {
@@ -159,6 +166,8 @@ export interface AdminUserDetail {
     starts_at?: string;
     ends_at: string;
     revoked_at: string | null;
+    reason?: string | null;
+    created_by?: string | null;
   }[];
   referrals: {
     id: string;
@@ -174,4 +183,36 @@ export interface CampaignCreated {
   id: string;
   secret: string;
   link?: string;
+}
+export interface SupportGrantResult {
+  grantId: string;
+  accountId: string;
+  days: number;
+  endsAt: string;
+  replayed: boolean;
+}
+export interface DeviceActionResult {
+  deviceId: string;
+  accountId: string;
+  platform: 'macos' | 'windows';
+  changed: boolean;
+  replayed: boolean;
+}
+export type ExternalAuditAction = 'user.sessions.revoke';
+export interface ExternalAuditInput {
+  idempotencyKey: string;
+  reason: string;
+  action: ExternalAuditAction;
+  targetAccountId: string;
+  result: 'requested' | 'succeeded' | 'failed';
+  details?: {
+    webSessions?: number;
+    oauthRefreshTokens?: number;
+    oauthAccessTokens?: number;
+    errorCode?: string;
+  };
+}
+export interface ExternalAuditRecorded {
+  recorded: true;
+  authUserId: string;
 }

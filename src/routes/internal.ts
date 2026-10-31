@@ -31,6 +31,7 @@ internalRoutes.get('/internal/jobs/account-deletions', async (context) => {
     drained: deletions.drained,
     rate_limit_buckets_deleted: rateLimitBucketsDeleted,
     purged_idempotency_records: purged.idempotencyRecords,
+    purged_operations_requests: purged.operationsRequests,
     purged_usage_reservations: purged.usageReservations,
     purged_provider_events: purged.providerEvents,
     purged_legacy_sessions: purged.legacySessions,
