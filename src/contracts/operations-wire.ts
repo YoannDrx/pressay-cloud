@@ -255,3 +255,36 @@ export interface ProviderEventReplay {
   errorCode: string | null;
   accountId: string | null;
 }
+export interface AdminMetrics {
+  subscribers: {
+    provider: 'stripe' | 'app_store';
+    billing_interval: 'month' | 'year';
+    status: 'trialing' | 'active' | 'past_due' | 'grace';
+    environment: 'Production' | 'Sandbox';
+    count: number;
+  }[];
+  mrr: {
+    provider: 'stripe' | 'app_store';
+    currency: string;
+    mrr_minor: number;
+    arr_minor: number;
+    subscriptions: number;
+    estimated_subscriptions: number;
+  }[];
+  signups: { day: string; count: number }[];
+  activeAccounts: { active_7d: number; active_30d: number };
+  grants: { source: string; count: number }[];
+  collectedThisMonth: {
+    currency: string;
+    paid_minor: number;
+    refunded_minor: number;
+    invoices: number;
+  }[];
+  downloads: {
+    platform: 'macos' | 'windows';
+    app_version: string;
+    last_7d: number;
+    last_30d: number;
+  }[];
+  generatedAt: string;
+}

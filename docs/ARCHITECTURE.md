@@ -227,6 +227,28 @@ on migration. Owner-only routes:
   `GET /v1/internal/jobs/ops-digest` cron logs these counters and posts them
   to `OPS_ALERT_WEBHOOK_URL` when set.
 
+## Commercial metrics
+
+`billing_subscription.amount_minor` and `currency` (migration 0026) hold the
+price per billing interval as charged to the customer (taxes included, before
+Stripe or Apple fees): the Stripe subscription item's `unit_amount`, or for the
+App Store the `price` of the signed transaction (milliunits converted with the
+currency's ISO 4217 exponent). When Apple sends no price, the App Store
+catalogue applies: `PRESSAY_APP_STORE_MONTHLY_AMOUNT_MINOR` and
+`PRESSAY_APP_STORE_ANNUAL_AMOUNT_MINOR` (optional, default to
+`PRESSAY_PRO_MONTHLY_AMOUNT_MINOR` / `PRESSAY_PRO_ANNUAL_AMOUNT_MINOR`) in
+`PRESSAY_PRO_CURRENCY`.
+
+`GET /v1/admin/metrics` (owner, aggregates only, no step-up) returns: live
+subscribers by provider, interval, status (trials apart) and Apple environment
+(Sandbox apart); MRR and ARR per provider and currency for paying Production
+subscriptions (`active`, `past_due`, `grace`; annual divided by 12), with the
+number of subscriptions priced from the catalogue because they predate 0026
+(`estimated_subscriptions`); sign-ups per UTC day over 30 days; accounts with
+a non-revoked device seen in 7 and 30 days; active grants by origin; invoices
+paid and refunds this month per currency; downloads per platform and version
+over 7 and 30 days.
+
 ## Retention matrix
 
 | Data                                                           | Retention                                                                   | Mechanism               |

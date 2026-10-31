@@ -124,4 +124,15 @@ describe('database migrations', () => {
     expect(migration).not.toMatch(/^\s*CREATE (TABLE|INDEX) (?!IF NOT EXISTS)/m);
     expect(migration).not.toContain('payload_sha256');
   });
+
+  it('stores subscription prices without changing existing rows', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0026_subscription_price.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS amount_minor integer');
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS currency text');
+    expect(migration).not.toMatch(/^\s*(UPDATE|DELETE|DROP)\b/m);
+  });
 });

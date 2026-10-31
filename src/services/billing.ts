@@ -918,7 +918,7 @@ async function applyStripeSubscription(
         account_id, provider, provider_subscription_id, provider_product_id,
         status, billing_interval, trial_ends_at, current_period_starts_at,
         current_period_ends_at, cancel_at_period_end, provider_event_occurred_at,
-        grace_ends_at
+        grace_ends_at, amount_minor, currency
       )
       SELECT
         $5, 'stripe', $7, $8, $9, $10,
@@ -927,7 +927,8 @@ async function applyStripeSubscription(
         CASE
           WHEN $9::text = 'past_due' THEN to_timestamp($12) + make_interval(secs => $15)
           ELSE NULL
-        END
+        END,
+        $21::integer, $22::text
       FROM incoming WHERE $6::text IS NOT NULL
       ON CONFLICT (provider, provider_subscription_id) DO UPDATE SET
         provider_product_id = EXCLUDED.provider_product_id,
@@ -939,6 +940,8 @@ async function applyStripeSubscription(
         cancel_at_period_end = EXCLUDED.cancel_at_period_end,
         provider_event_occurred_at = EXCLUDED.provider_event_occurred_at,
         grace_ends_at = EXCLUDED.grace_ends_at,
+        amount_minor = COALESCE(EXCLUDED.amount_minor, billing_subscription.amount_minor),
+        currency = COALESCE(EXCLUDED.currency, billing_subscription.currency),
         updated_at = now()
       WHERE billing_subscription.provider_event_occurred_at < EXCLUDED.provider_event_occurred_at
         OR (
@@ -987,6 +990,9 @@ async function applyStripeSubscription(
       ledger?.status ?? null,
       ledger?.amountMinor ?? null,
       ledger?.currency ?? null,
+      // Price per interval as configured on the subscription item.
+      typeof item.price.unit_amount === 'number' ? item.price.unit_amount : null,
+      /^[a-z]{3}$/.test(item.price.currency) ? item.price.currency : null,
     ],
   );
   const applied = projection[0]?.state === 'applied';
