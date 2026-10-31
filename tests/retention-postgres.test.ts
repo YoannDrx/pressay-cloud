@@ -151,6 +151,7 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
         providerEvents: 1,
         legacySessions: 1,
         legacyVerifications: 0,
+        waitlistEntries: 0,
       });
       expect(await run('SELECT idempotency_key FROM idempotency_record')).toEqual([
         { idempotency_key: 'new-idempotency-key-0001' },
