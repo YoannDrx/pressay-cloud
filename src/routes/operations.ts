@@ -10,6 +10,7 @@ import { expectedStripeLivemode, getEnvironment } from '../env.js';
 import { getStripe } from '../billing/stripe-client.js';
 import { bootstrapWebAccount, recordAccountContact } from '../services/accounts.js';
 import { customerDetail, searchAccounts } from '../services/admin-customers.js';
+import { exportAccountDataForSupport } from '../services/data-export.js';
 import { adminMetrics } from '../services/admin-metrics.js';
 import {
   billingAlerts,
@@ -222,6 +223,27 @@ operationsRoutes.get('/admin/users/:id', async (c) => {
       expectedStripeLivemode(getEnvironment()) ? 'live' : 'test',
     ),
   );
+});
+// Access request (GDPR art. 15): the account's data as a JSON file. The web
+// adds its own sign-in data with `?include=identity`, which is recorded too.
+operationsRoutes.get('/admin/users/:id/export', async (c) => {
+  requireRecentStepUp(c.get('authSessionId'), c.get('authStepUpAt'));
+  const id = uuid(c.req.param('id'));
+  const include = c.req.query('include');
+  if (include !== undefined && include !== 'identity')
+    throw new ApiError(422, 'invalid_query', 'Invalid filter');
+  const data = await exportAccountDataForSupport(id);
+  await audit(
+    c.get('operationsAccountId'),
+    'admin.user.export',
+    id,
+    'data_export',
+    c.get('requestId'),
+    'succeeded',
+    { targetAccountId: id, details: { siteIdentity: include === 'identity' } },
+  );
+  c.header('Content-Disposition', `attachment; filename="pressay-account-${id}.json"`);
+  return c.json(data);
 });
 operationsRoutes.get('/admin/campaigns', async (c) =>
   c.json({

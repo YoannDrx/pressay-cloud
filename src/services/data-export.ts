@@ -2,16 +2,80 @@ import { z } from 'zod';
 
 import { getSql } from '../db/client.js';
 import { ApiError } from '../lib/errors.js';
+import { AUDIT_READ_REASONS } from './retention.js';
 
 /**
  * Machine-readable copy of the personal data Cloud holds for the caller
- * (GDPR art. 15 and 20). Hashes, keys, encrypted payloads and provider
+ * (GDPR art. 15 and 20), including the platform waitlists joined with the
+ * account's verified address. Hashes, keys, encrypted payloads and provider
  * identifiers are omitted: they are not readable data about the person and
  * some are security material. Sync content is end-to-end encrypted, so only
  * its volume is reported; the desktop app holds the readable copy.
  */
 export async function exportAccountData(
   authUserId: string,
+): Promise<Record<string, unknown>> {
+  return accountExport(
+    "account.auth_user_id = $1 AND account.status = 'active'",
+    authUserId,
+  );
+}
+
+/**
+ * The same export of any account that still holds data (active or being
+ * deleted), for support answering an access request, with what only support
+ * sees: the identity subject (to add the site's sign-in data), the support
+ * actions that concern the account and the invitations reserved to its
+ * address. Callers check the role and step-up and audit the export.
+ */
+export async function exportAccountDataForSupport(
+  accountId: string,
+): Promise<Record<string, unknown>> {
+  const data = await accountExport(
+    "account.id = $1::uuid AND account.status IN ('active', 'deleting')",
+    accountId,
+  );
+  const rows = await getSql().query(
+    `SELECT
+      (SELECT auth_user_id FROM pressay_account WHERE id = $1) AS identity_subject,
+      COALESCE((
+        SELECT json_agg(json_build_object(
+          'action', audit.action,
+          'result', audit.result,
+          'reason', audit.reason,
+          'at', audit.created_at
+        ) ORDER BY audit.id)
+        FROM operations_audit audit
+        WHERE audit.target_account_id = $1
+          AND NOT audit.reason = ANY($2::text[])
+      ), '[]'::json) AS support_actions,
+      COALESCE((
+        SELECT json_agg(json_build_object(
+          'kind', campaign.kind,
+          'status', campaign.status,
+          'durationDays', campaign.duration_days,
+          'redeemed', campaign.redemptions >= campaign.max_redemptions,
+          'expiresAt', campaign.expires_at,
+          'createdAt', campaign.created_at
+        ) ORDER BY campaign.created_at)
+        FROM access_campaign campaign
+        JOIN account_contact contact ON contact.account_id = $1
+        WHERE campaign.restricted_email = lower(contact.email)
+      ), '[]'::json) AS reserved_invitations`,
+    [accountId, AUDIT_READ_REASONS],
+  );
+  return {
+    ...data,
+    format: 'pressay-cloud-support-export/1',
+    identitySubject: rows[0]?.identity_subject ?? null,
+    supportActions: rows[0]?.support_actions ?? [],
+    reservedInvitations: rows[0]?.reserved_invitations ?? [],
+  };
+}
+
+async function accountExport(
+  where: string,
+  value: string,
 ): Promise<Record<string, unknown>> {
   const rows = await getSql().query(
     `SELECT json_build_object(
@@ -110,11 +174,23 @@ export async function exportAccountData(
       ),
       'encryptedSyncChanges', (
         SELECT count(*)::integer FROM sync_change WHERE account_id = account.id
-      )
+      ),
+      'waitlists', COALESCE((
+        SELECT json_agg(json_build_object(
+          'platform', waitlist.platform,
+          'locale', waitlist.locale,
+          'source', waitlist.source,
+          'consentAt', waitlist.consent_at,
+          'unsubscribedAt', waitlist.unsubscribed_at
+        ) ORDER BY waitlist.created_at)
+        FROM waitlist_entry waitlist
+        JOIN account_contact contact ON contact.account_id = account.id
+        WHERE waitlist.email = lower(contact.email)
+      ), '[]'::json)
     ) AS export
     FROM pressay_account account
-    WHERE account.auth_user_id = $1 AND account.status = 'active'`,
-    [authUserId],
+    WHERE ${where}`,
+    [value],
   );
   const parsed = z
     .object({ export: z.record(z.string(), z.unknown()) })

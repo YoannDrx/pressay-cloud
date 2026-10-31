@@ -259,7 +259,8 @@ over 7 and 30 days.
 | Settled usage reservations                                     | 395 days (`PRESSAY_RETENTION_USAGE_RESERVATION_DAYS`)                       | Daily purge             |
 | Provider event receipts without financial record               | 400 days (`PRESSAY_RETENTION_PROVIDER_EVENT_DAYS`)                          | Daily purge             |
 | Financial ledger (`billing_financial_event`) and its events    | Accounting obligation (10 years in France)                                  | Kept                    |
-| `operations_audit`                                             | Kept for accountability                                                     | Kept                    |
+| `operations_audit` reads and exports                           | 365 days (`PRESSAY_RETENTION_AUDIT_READ_DAYS`)                              | Daily purge             |
+| `operations_audit` actions (every other entry)                 | 1825 days (`PRESSAY_RETENTION_AUDIT_ACTION_DAYS`)                           | Daily purge             |
 | Rate-limit buckets                                             | Until window expiry                                                         | Daily purge             |
 | Checkout leases (`billing_checkout_lease`)                     | Until the Checkout request ends; an abandoned lease is inert after 90 s     | Deleted by the request  |
 | Retired Cloud sessions and verifications                       | Until expiry                                                                | Daily purge             |
@@ -267,10 +268,34 @@ over 7 and 30 days.
 | Anonymous download events (`download_event`, no personal data) | Kept as aggregate statistics                                                | Kept                    |
 | Waitlist entries (`waitlist_entry`)                            | 730 days after consent (`PRESSAY_RETENTION_WAITLIST_DAYS`)                  | Daily purge             |
 | Unsubscribed waitlist entries                                  | 30 days after unsubscribing                                                 | Daily purge             |
+| Invitation address (`access_campaign.restricted_email`)        | While the invitation can be redeemed; erased with the account               | Daily purge, deletion   |
 
 `GET /v1/me/export` returns the caller's data as JSON (account, contact,
 devices, entitlement, subscriptions, payments, consents, usage, grants, referral
-data, sync volume) without hashes, keys or provider identifiers.
+data, sync volume, platform waitlists of the verified address) without hashes,
+keys or provider identifiers.
+
+An invitation reserved to an address (`restricted_email`) keeps it only while
+it can be redeemed: the daily purge erases it once the invitation has expired,
+was revoked or failed, or was fully redeemed. When an account is erased, the
+deletion job first erases its address from reserved invitations and revokes
+those still redeemable (without the address, anyone holding the code could
+use them).
+
+Audit reads and exports (reason `personal_data_read` or `data_export`) are
+purged after `PRESSAY_RETENTION_AUDIT_READ_DAYS` (default 365, 30 to 3650),
+every other entry after `PRESSAY_RETENTION_AUDIT_ACTION_DAYS` (default 1825,
+365 to 3650).
+
+### Access requests
+
+`GET /v1/admin/users/:id/export` (step-up; account active or being deleted)
+returns the same JSON as `GET /v1/me/export` for that account, plus the
+identity subject, the support actions that concern it (reads excluded) and the
+invitations reserved to its address, as an attachment. Each export is written
+to `operations_audit` as `admin.user.export` (reason `data_export`); with
+`?include=identity` the web adds the sign-in data it holds (linked providers,
+passkeys, sessions, Authenticator status) and the entry records it.
 
 ## Platform waitlists
 
