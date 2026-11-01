@@ -116,6 +116,11 @@ offline grace and is flagged `entitlement.sandbox`. A flagged entitlement keeps
 Pro in the app but never unlocks the paid Cloud services: Cloud processing
 answers 403 `cloud_entitlement_required` and E2EE sync refuses the device.
 
+This applies to every TestFlight build, on Mac and on iPhone, since TestFlight
+purchases are Sandbox purchases: a tester whose account is not listed stays on
+Free after buying. Test paid flows, including Mac and iPhone activating each other,
+on staging or with a listed account.
+
 ### App Review accounts
 
 Before each App Store submission backed by the production API:

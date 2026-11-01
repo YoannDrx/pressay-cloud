@@ -26,18 +26,26 @@ export async function adminMetrics(): Promise<AdminMetrics> {
       environment.PRESSAY_PRO_ANNUAL_AMOUNT_MINOR,
     environment.PRESSAY_PRO_CURRENCY,
   ];
-  const [subscribers, revenue, signups, activity, grants, collected, downloads] =
-    await Promise.all([
-      sql.query(
-        `SELECT provider,billing_interval,status,apple_environment AS environment,
+  const [
+    subscribers,
+    revenue,
+    signups,
+    activity,
+    devices,
+    grants,
+    collected,
+    downloads,
+  ] = await Promise.all([
+    sql.query(
+      `SELECT provider,billing_interval,status,apple_environment AS environment,
           count(*)::int AS count
         FROM billing_subscription
         WHERE status IN ('trialing','active','past_due','grace') AND current_period_ends_at>now()
         GROUP BY 1,2,3,4 ORDER BY 1,2,3,4`,
-        [],
-      ),
-      sql.query(
-        `WITH priced AS (
+      [],
+    ),
+    sql.query(
+      `WITH priced AS (
           SELECT provider,
             COALESCE(amount_minor, CASE
               WHEN provider='stripe' AND billing_interval='month' THEN $1::int
@@ -57,10 +65,10 @@ export async function adminMetrics(): Promise<AdminMetrics> {
           count(*)::int AS subscriptions,
           count(*) FILTER (WHERE estimated)::int AS estimated_subscriptions
         FROM priced GROUP BY 1,2 ORDER BY 1,2`,
-        catalogue,
-      ),
-      sql.query(
-        `SELECT to_char(series.day,'YYYY-MM-DD') AS day,count(a.id)::int AS count
+      catalogue,
+    ),
+    sql.query(
+      `SELECT to_char(series.day,'YYYY-MM-DD') AS day,count(a.id)::int AS count
         FROM generate_series(
           (now() AT TIME ZONE 'UTC')::date - 29,
           (now() AT TIME ZONE 'UTC')::date,
@@ -69,26 +77,35 @@ export async function adminMetrics(): Promise<AdminMetrics> {
         LEFT JOIN pressay_account a
           ON (a.created_at AT TIME ZONE 'UTC')::date = series.day::date
         GROUP BY 1 ORDER BY 1`,
-        [],
-      ),
-      sql.query(
-        `SELECT
+      [],
+    ),
+    sql.query(
+      `SELECT
           count(DISTINCT d.account_id) FILTER (WHERE d.last_seen_at>now()-interval '7 days')::int
             AS active_7d,
           count(DISTINCT d.account_id) FILTER (WHERE d.last_seen_at>now()-interval '30 days')::int
             AS active_30d
         FROM pressay_device d JOIN pressay_account a ON a.id=d.account_id
         WHERE a.status='active' AND d.revoked_at IS NULL`,
-        [],
-      ),
-      sql.query(
-        `SELECT source,count(*)::int AS count FROM access_grant
+      [],
+    ),
+    sql.query(
+      `SELECT d.platform,count(*)::int AS active,
+          count(*) FILTER (WHERE d.last_seen_at>now()-interval '7 days')::int AS seen_7d,
+          count(*) FILTER (WHERE d.last_seen_at>now()-interval '30 days')::int AS seen_30d
+        FROM pressay_device d JOIN pressay_account a ON a.id=d.account_id
+        WHERE a.status='active' AND d.revoked_at IS NULL
+        GROUP BY 1 ORDER BY 1`,
+      [],
+    ),
+    sql.query(
+      `SELECT source,count(*)::int AS count FROM access_grant
         WHERE revoked_at IS NULL AND starts_at<=now() AND ends_at>now()
         GROUP BY 1 ORDER BY 1`,
-        [],
-      ),
-      sql.query(
-        `SELECT currency,
+      [],
+    ),
+    sql.query(
+      `SELECT currency,
           COALESCE(sum(amount_minor) FILTER (WHERE kind='invoice_paid'),0)::bigint AS paid_minor,
           COALESCE(sum(amount_minor) FILTER (WHERE kind='refund'),0)::bigint AS refunded_minor,
           count(*) FILTER (WHERE kind='invoice_paid')::int AS invoices
@@ -96,17 +113,17 @@ export async function adminMetrics(): Promise<AdminMetrics> {
         WHERE provider_occurred_at>=date_trunc('month',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
           AND kind IN ('invoice_paid','refund')
         GROUP BY 1 ORDER BY 1`,
-        [],
-      ),
-      sql.query(
-        `SELECT platform,app_version,
+      [],
+    ),
+    sql.query(
+      `SELECT platform,app_version,
           count(*) FILTER (WHERE created_at>now()-interval '7 days')::int AS last_7d,
           count(*)::int AS last_30d
         FROM download_event WHERE created_at>now()-interval '30 days'
         GROUP BY 1,2 ORDER BY 4 DESC,1,2 LIMIT 50`,
-        [],
-      ),
-    ]);
+      [],
+    ),
+  ]);
   const mrr = revenue.map((row) => ({
     ...row,
     arr_minor: Number(row.mrr_minor) * 12,
@@ -116,6 +133,7 @@ export async function adminMetrics(): Promise<AdminMetrics> {
     mrr,
     signups,
     activeAccounts: activity[0] ?? { active_7d: 0, active_30d: 0 },
+    devicesByPlatform: devices,
     grants,
     collectedThisMonth: collected,
     downloads,

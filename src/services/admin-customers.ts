@@ -71,7 +71,8 @@ export async function searchAccounts(query: UserQuery): Promise<AdminUsers> {
     COALESCE(e.sandbox,false) AS sandbox,
     COALESCE(d.macos,0) AS macos_device_count,
     COALESCE(d.windows,0) AS windows_device_count,
-    COALESCE(d.macos,0)+COALESCE(d.windows,0) AS active_device_count,
+    COALESCE(d.ios,0) AS ios_device_count,
+    COALESCE(d.active,0) AS active_device_count,
     d.last_seen AS last_device_seen_at
     FROM pressay_account a
     LEFT JOIN account_contact u ON u.account_id=a.id
@@ -79,6 +80,8 @@ export async function searchAccounts(query: UserQuery): Promise<AdminUsers> {
     LEFT JOIN LATERAL (
       SELECT count(*) FILTER (WHERE revoked_at IS NULL AND platform='macos')::int AS macos,
         count(*) FILTER (WHERE revoked_at IS NULL AND platform='windows')::int AS windows,
+        count(*) FILTER (WHERE revoked_at IS NULL AND platform='ios')::int AS ios,
+        count(*) FILTER (WHERE revoked_at IS NULL)::int AS active,
         max(last_seen_at) AS last_seen
       FROM pressay_device WHERE account_id=a.id
     ) d ON true

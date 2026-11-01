@@ -84,7 +84,10 @@ then remove the old public key. Private keys are never stored in GitHub.
 
 ## App Store billing
 
-The Mac App Store build passes the Pressay account UUID as StoreKit's
+The Mac App Store and iPhone builds are one universal purchase (same bundle
+identifier, same App Apple ID, same products), so nothing here depends on the
+platform: a purchase on either activates Pro on the account, hence on both. They
+pass the Pressay account UUID as StoreKit's
 `appAccountToken`. `POST /v1/billing/restore-app-store` accepts a signed
 StoreKit 2 transaction whose token matches the authenticated account; a purchase
 without a token or bound to another token (offer codes, Family Sharing, another
@@ -224,7 +227,7 @@ the action: a failed action leaves its key free, a replayed key returns the
 first result without acting twice, and a key reused on another target is
 refused.
 
-A revoked computer is refused at sign-in until it is restored, by its owner
+A revoked device (Mac, PC or iPhone) is refused at sign-in until it is restored, by its owner
 (`GET /v1/devices?include=revoked`, `POST /v1/devices/:id/restore`) or by
 support, within the shared limit of three active devices.
 

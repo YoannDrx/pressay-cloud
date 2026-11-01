@@ -136,11 +136,20 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
       await subscription(reviewer, 'app_store', 'month', 'active', 799, 'Sandbox');
       await subscription(reviewer, 'stripe', 'month', 'canceled', 799);
       await run(
-        `INSERT INTO pressay_device(account_id,device_identifier_hash,display_name,app_variant,app_version,last_seen_at,revoked_at) VALUES
-        ($1,$4,'Mac','direct','1.0',now()-interval '1 day',NULL),
-        ($2,$5,'PC','direct','1.0',now()-interval '10 days',NULL),
-        ($3,$6,'Old','direct','1.0',now()-interval '1 day',now())`,
-        [monthly, yearly, trial, randomBytes(32), randomBytes(32), randomBytes(32)],
+        `INSERT INTO pressay_device(account_id,device_identifier_hash,display_name,platform,app_variant,app_version,last_seen_at,revoked_at) VALUES
+        ($1,$4,'Mac','macos','direct','1.0',now()-interval '1 day',NULL),
+        ($2,$5,'PC','windows','direct','1.0',now()-interval '10 days',NULL),
+        ($3,$6,'Old','macos','direct','1.0',now()-interval '1 day',now()),
+        ($1,$7,'iPhone','ios','app_store_ios','1.0',now()-interval '40 days',NULL)`,
+        [
+          monthly,
+          yearly,
+          trial,
+          randomBytes(32),
+          randomBytes(32),
+          randomBytes(32),
+          randomBytes(32),
+        ],
       );
       await run(
         `INSERT INTO access_grant(account_id,source,starts_at,ends_at) VALUES
@@ -245,6 +254,11 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
       expect(data.signups.reduce((sum, day) => sum + day.count, 0)).toBe(4);
       expect(data.signups.at(-1)?.day).toBe(new Date().toISOString().slice(0, 10));
       expect(data.activeAccounts).toEqual({ active_7d: 1, active_30d: 2 });
+      expect(data.devicesByPlatform).toEqual([
+        { platform: 'ios', active: 1, seen_7d: 0, seen_30d: 0 },
+        { platform: 'macos', active: 1, seen_7d: 1, seen_30d: 1 },
+        { platform: 'windows', active: 1, seen_7d: 0, seen_30d: 1 },
+      ]);
       expect(data.grants).toEqual([
         { source: 'invitation', count: 1 },
         { source: 'support', count: 1 },
