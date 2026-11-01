@@ -10,6 +10,7 @@ import type {
   UsageSnapshot,
 } from '../contracts/account.js';
 import {
+  deviceAppVariantSchema,
   deviceListResponseSchema,
   devicePlatformSchema,
   entitlementSchema,
@@ -49,7 +50,7 @@ const deviceRowSchema = z.object({
   id: z.uuid(),
   display_name: z.string(),
   platform: devicePlatformSchema,
-  app_variant: z.enum(['direct', 'mas']),
+  app_variant: deviceAppVariantSchema,
   app_version: z.string(),
   approved: z.boolean(),
   last_seen_at: z.coerce.date(),

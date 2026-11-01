@@ -20,6 +20,13 @@ describe('desktop authentication through the single web issuer', () => {
     clearEnvironmentCacheForTests();
   });
 
+  it('gives the iPhone the callback its ASWebAuthenticationSession listens for', async () => {
+    const response = await app.request('/v1/desktop-auth/config');
+    const config = (await response.json()) as { callbackUrl: string; flow: string };
+    expect(new URL(config.callbackUrl).protocol).toBe('pressay:');
+    expect(config.flow).toBe('web_oauth_pkce');
+  });
+
   it('advertises the web issuer and both providers through the PKCE flow', async () => {
     const response = await app.request('/v1/desktop-auth/config');
     expect(response.status).toBe(200);

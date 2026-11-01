@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { deviceAppVariantSchema, devicePlatformSchema } from './account.js';
+
 export const reasonSchema = z.object({ reason: z.string().trim().min(3).max(500) });
 export const campaignSchema = reasonSchema
   .extend({
@@ -208,6 +210,7 @@ export const adminUsersSchema = z.object({
       active_device_count: integer.nonnegative(),
       macos_device_count: integer.nonnegative(),
       windows_device_count: integer.nonnegative(),
+      ios_device_count: integer.nonnegative(),
       last_device_seen_at: nullableDate,
     }),
   ),
@@ -242,7 +245,7 @@ export const supportGrantResultSchema = z.object({
 export const deviceActionResultSchema = z.object({
   deviceId: z.uuid(),
   accountId: z.uuid(),
-  platform: z.enum(['macos', 'windows']),
+  platform: devicePlatformSchema,
   changed: z.boolean(),
   replayed: z.boolean().default(false),
 });
@@ -311,6 +314,14 @@ export const adminMetricsSchema = z.object({
   ),
   signups: z.array(z.object({ day: z.iso.date(), count: integer })),
   activeAccounts: z.object({ active_7d: integer, active_30d: integer }),
+  devicesByPlatform: z.array(
+    z.object({
+      platform: devicePlatformSchema,
+      active: integer,
+      seen_7d: integer,
+      seen_30d: integer,
+    }),
+  ),
   grants: z.array(z.object({ source: z.string(), count: integer })),
   collectedThisMonth: z.array(
     z.object({
@@ -368,8 +379,8 @@ export const adminUserDetailSchema = z.object({
     z.object({
       id: z.uuid(),
       displayName: z.string(),
-      platform: z.enum(['macos', 'windows']),
-      appVariant: z.enum(['direct', 'mas']),
+      platform: devicePlatformSchema,
+      appVariant: deviceAppVariantSchema,
       appVersion: z.string(),
       approved: z.boolean(),
       lastSeenAt: date,

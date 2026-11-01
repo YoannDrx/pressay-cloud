@@ -65,13 +65,19 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
     }
     async function device(
       accountId: string,
-      platform: 'macos' | 'windows',
+      platform: 'macos' | 'windows' | 'ios',
       revoked = false,
     ) {
       const rows = await pool.query<{ id: string }>(
         `INSERT INTO pressay_device(account_id,device_identifier_hash,display_name,platform,app_variant,app_version,revoked_at)
-        VALUES($1,$2,'Work computer',$3,'direct','1.4.0',$4) RETURNING id`,
-        [accountId, randomBytes(32), platform, revoked ? new Date() : null],
+        VALUES($1,$2,'Work computer',$3,$5,'1.4.0',$4) RETURNING id`,
+        [
+          accountId,
+          randomBytes(32),
+          platform,
+          revoked ? new Date() : null,
+          platform === 'ios' ? 'app_store_ios' : 'direct',
+        ],
       );
       return String(rows.rows[0]?.id);
     }
@@ -188,6 +194,8 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
       await device(paid, 'macos');
       await device(paid, 'windows');
       await device(paid, 'windows', true);
+      await device(review, 'ios');
+      await device(review, 'ios', true);
 
       expect(ids(await search({ plan: 'pro' }))).toEqual([paid]);
       expect(await search({ plan: 'sandbox' })).toMatchObject({
@@ -198,8 +206,20 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
         entitlement_source: 'stripe',
         macos_device_count: 2,
         windows_device_count: 1,
+        ios_device_count: 0,
         active_device_count: 3,
       });
+      expect((await search({ search: 'review@' })).users[0]).toMatchObject({
+        macos_device_count: 0,
+        windows_device_count: 0,
+        ios_device_count: 1,
+        active_device_count: 1,
+      });
+      const record = (await api(`admin/users/${review}`)).data as AdminUserDetail;
+      expect(record.devices.map((d) => [d.platform, d.appVariant])).toEqual([
+        ['ios', 'app_store_ios'],
+        ['ios', 'app_store_ios'],
+      ]);
       const overview = (await api('admin/overview')).data as {
         plans: { plan: string; count: number }[];
       };

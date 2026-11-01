@@ -6,9 +6,11 @@ import type { AppEnvironment } from '../types.js';
 
 /**
  * Pressay has one end-user identity issuer: the web app's Better Auth OAuth 2.1
- * server. The desktop signs in with authorization code + PKCE against that
- * issuer for every provider (Apple, Google and the web's other methods) and
- * presents the resulting access token to this API. The API itself no longer
+ * server. The Mac, Windows and iPhone apps sign in with authorization code +
+ * PKCE against that issuer for every provider (Apple, Google and the web's other
+ * methods) and present the resulting access token to this API. They share one
+ * public OAuth client and one callback: on iPhone, ASWebAuthenticationSession
+ * receives it directly (`callbackURLScheme: "pressay"`). The API itself no longer
  * runs social or magic-link sign-in.
  */
 const DESKTOP_REDIRECT_URI = 'pressay://oauth/callback';

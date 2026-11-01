@@ -17,6 +17,25 @@ describe('database migrations', () => {
     );
   });
 
+  it('widens the device checks for iPhone without touching the slot functions', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0031_ios_devices.sql', import.meta.url),
+      'utf8',
+    );
+
+    expect(migration).toContain("CHECK (platform IN ('macos', 'windows', 'ios'))");
+    expect(migration).toContain(
+      "CHECK (app_variant IN ('direct', 'mas', 'app_store_ios'))",
+    );
+    expect(migration).toContain(
+      'DROP CONSTRAINT IF EXISTS pressay_device_platform_check',
+    );
+    expect(migration).toContain(
+      'DROP CONSTRAINT IF EXISTS pressay_device_app_variant_check',
+    );
+    expect(migration).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|DROP FUNCTION/);
+  });
+
   it('moves the single owner into members with roles, keeping the old table for running code', async () => {
     const migration = await readFile(
       new URL('../migrations/0030_operations_members.sql', import.meta.url),

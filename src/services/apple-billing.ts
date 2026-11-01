@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import {
   AutoRenewStatus,
   Environment,
+  OfferDiscountType,
+  OfferType,
   Status,
   type JWSTransactionDecodedPayload,
   type JWSRenewalInfoDecodedPayload,
@@ -39,6 +41,9 @@ const transactionSchema = z.object({
   appAccountToken: z.uuid().optional(),
   revocationDate: z.number().int().positive().optional(),
   isUpgraded: z.boolean().optional(),
+  // 1 is an introductory offer; with FREE_TRIAL it is the App Store trial.
+  offerType: z.number().int().optional(),
+  offerDiscountType: z.string().optional(),
   // Price paid for this transaction in milliunits of `currency` (App Store
   // Server API 1.10+); absent on older transactions.
   price: z.number().int().nonnegative().optional(),
@@ -56,7 +61,8 @@ interface AppleProduct {
   interval: BillingInterval;
 }
 
-type AppleSubscriptionStatus = 'active' | 'past_due' | 'grace' | 'expired' | 'refunded';
+type AppleSubscriptionStatus =
+  'trialing' | 'active' | 'past_due' | 'grace' | 'expired' | 'refunded';
 
 interface AppleSubscriptionRecord {
   environment: AppleEnvironment;
@@ -131,6 +137,18 @@ function parseTransaction(transaction: JWSTransactionDecodedPayload): AppleTrans
   return parsed.data;
 }
 
+/**
+ * The free trial of the annual plan unlocks Pro like a paid period but brings
+ * in no revenue: the metrics must not count it as a paying subscription. The
+ * first renewal arrives as a transaction without an offer, hence `active`.
+ */
+function isFreeTrial(transaction: AppleTransaction): boolean {
+  return (
+    transaction.offerType === OfferType.INTRODUCTORY_OFFER &&
+    transaction.offerDiscountType === OfferDiscountType.FREE_TRIAL
+  );
+}
+
 function mapAppleStatus(
   status: Status | number | undefined,
   transaction: AppleTransaction,
@@ -139,7 +157,7 @@ function mapAppleStatus(
   if (transaction.isUpgraded) return 'expired';
   switch (status) {
     case Status.ACTIVE:
-      return 'active';
+      return isFreeTrial(transaction) ? 'trialing' : 'active';
     case Status.BILLING_RETRY:
       return 'past_due';
     case Status.BILLING_GRACE_PERIOD:
@@ -385,14 +403,14 @@ async function applyAppleSubscription(
 }
 
 /**
- * Apple and Stripe can both bill the same account (for example a Mac App Store
- * purchase while a web subscription runs). Access is not doubled, but support
+ * Apple and Stripe can both bill the same account (for example an App Store
+ * purchase on a Mac or an iPhone while a web subscription runs). Access is not doubled, but support
  * must refund one side: flag the event and log a stable code.
  */
 async function flagDuplicateWithStripe(record: AppleSubscriptionRecord): Promise<void> {
   if (
     record.environment !== Environment.PRODUCTION ||
-    !['active', 'grace', 'past_due'].includes(record.status)
+    !['trialing', 'active', 'grace', 'past_due'].includes(record.status)
   ) {
     return;
   }
