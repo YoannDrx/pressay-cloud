@@ -39,7 +39,7 @@
     "@hono/zod-validator": "0.9.1",
     "@neondatabase/serverless": "1.2.0",
     "hono": "4.13.14",
-    "jose": "6.2.13",
+    "jose": "6.2.14",
     "openai": "7.45.1",
     "pg": "8.23.1",
     "stripe": "22.6.2",
