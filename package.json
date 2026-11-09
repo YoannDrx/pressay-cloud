@@ -35,12 +35,12 @@
   },
   "dependencies": {
     "@apple/app-store-server-library": "3.1.0",
-    "@hono/node-server": "2.1.5",
+    "@hono/node-server": "2.1.6",
     "@hono/zod-validator": "0.9.1",
     "@neondatabase/serverless": "1.2.0",
-    "hono": "4.13.14",
-    "jose": "6.2.13",
-    "openai": "7.45.1",
+    "hono": "4.13.16",
+    "jose": "6.2.15",
+    "openai": "7.53.0",
     "pg": "8.23.1",
     "stripe": "22.6.2",
     "zod": "4.6.7"
