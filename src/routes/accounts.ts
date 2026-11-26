@@ -167,9 +167,9 @@ accountRoutes.get('/usage', async (context) => {
  * server adds it to its proxy token after Better Auth has checked the session
  * freshness; a long-lived session alone is not enough.
  *
- * OAuth access tokens of the Mac, Windows and iPhone apps (never `webProxy`)
- * keep their current contract: they are short-lived and refreshed by the
- * signed-in app itself.
+ * OAuth access tokens of the Mac and Windows apps (never `webProxy`) keep their
+ * current contract: they are short-lived and refreshed by the signed-in app
+ * itself.
  */
 function requireRecentWebAuthentication(context: Context<AppEnvironment>): void {
   if (!context.get('authWebProxy')) return;

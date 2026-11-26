@@ -37,7 +37,6 @@ internalRoutes.get('/internal/jobs/account-deletions', async (context) => {
     purged_provider_events: purged.providerEvents,
     purged_legacy_sessions: purged.legacySessions,
     purged_legacy_verifications: purged.legacyVerifications,
-    purged_waitlist_entries: purged.waitlistEntries,
     purged_audit_reads: purged.auditReads,
     purged_audit_actions: purged.auditActions,
     purged_restricted_emails: purged.restrictedEmails,

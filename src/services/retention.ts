@@ -17,7 +17,6 @@ export interface PurgeResult {
   providerEvents: number;
   legacySessions: number;
   legacyVerifications: number;
-  waitlistEntries: number;
   auditReads: number;
   auditActions: number;
   restrictedEmails: number;
@@ -112,18 +111,6 @@ export async function purgeExpiredRecords(): Promise<PurgeResult> {
     WHERE ctid IN (SELECT ctid FROM "verification" WHERE "expiresAt" < now() LIMIT $1)`,
     [PURGE_BATCH_SIZE],
   );
-  // Waitlists: consent lapses after PRESSAY_RETENTION_WAITLIST_DAYS, and an
-  // unsubscribed address is kept 30 days only (to honour the request).
-  const waitlistEntries = await deleteBatch(
-    `DELETE FROM waitlist_entry
-    WHERE ctid IN (
-      SELECT ctid FROM waitlist_entry
-      WHERE consent_at < now() - make_interval(days => $1)
-        OR unsubscribed_at < now() - interval '30 days'
-      LIMIT $2
-    )`,
-    [environment.PRESSAY_RETENTION_WAITLIST_DAYS, PURGE_BATCH_SIZE],
-  );
   // Audit ledger: reads and exports expire sooner than actions.
   const auditReads = await deleteBatch(
     `DELETE FROM operations_audit
@@ -176,7 +163,6 @@ export async function purgeExpiredRecords(): Promise<PurgeResult> {
     providerEvents,
     legacySessions,
     legacyVerifications,
-    waitlistEntries,
     auditReads,
     auditActions,
     restrictedEmails,

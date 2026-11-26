@@ -9,9 +9,8 @@ domain points to the opaque Better Auth user ID through `pressay_account`.
 Devices are identified by a server-keyed hash; the raw machine identifier is not
 stored. Approved devices may hold a public key and an encrypted account-key
 envelope, never a private key.
-A device records its platform (`macos`, `windows`, `ios`) and distribution
-variant (`direct`, `mas`, `app_store_ios`); every platform shares the account's
-three active slots.
+A device records its platform (`macos`, `windows`) and distribution variant
+(`direct`, `mas`); both platforms share the account's three active slots.
 
 ## Billing and entitlements
 

@@ -159,7 +159,6 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
         providerEvents: 1,
         legacySessions: 1,
         legacyVerifications: 0,
-        waitlistEntries: 0,
         auditReads: 0,
         auditActions: 0,
         restrictedEmails: 0,

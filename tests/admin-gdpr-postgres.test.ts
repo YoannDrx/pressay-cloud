@@ -68,7 +68,7 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
       deleteWebIdentity.mockReset();
       deleteWebIdentity.mockResolvedValue('deleted');
       await run(
-        'TRUNCATE "user",pressay_account,operations_owner,operations_audit,access_campaign,waitlist_entry CASCADE',
+        'TRUNCATE "user",pressay_account,operations_owner,operations_audit,access_campaign CASCADE',
       );
       owner = await account('owner@example.com');
       customer = await account('Person@Example.test');
@@ -217,18 +217,12 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
     });
 
     it('exports an account for an access request after step-up and audits it', async () => {
-      await run(
-        `INSERT INTO waitlist_entry(email,platform,locale,source,consent_at) VALUES
-        ('person@example.test','ios','fr','landing',now()),('other@example.test','windows','en','landing',now())`,
-      );
       await campaign('person@example.test');
       await auditEntry('Beta tester', '2 days');
       await auditEntry('personal_data_read', '1 day', 'admin.user.read');
-      // The customer's own export lists their waitlists too.
+      // Platform waitlists are gone: nothing about them is exported any more.
       const own = await exportAccountData(`subject-${customer}`);
-      expect(own.waitlists).toEqual([
-        expect.objectContaining({ platform: 'ios', locale: 'fr', source: 'landing' }),
-      ]);
+      expect(own).not.toHaveProperty('waitlists');
 
       const refused = await get(`admin/users/${customer}/export`, false);
       expect(refused.status).toBe(403);
@@ -254,7 +248,6 @@ describe.skipIf(!process.env.OPERATIONS_TEST_DATABASE_URL)(
         identitySubject: `subject-${customer}`,
         account: { id: customer, status: 'active' },
         contact: { email: 'Person@Example.test' },
-        waitlists: [expect.objectContaining({ platform: 'ios' })],
         reservedInvitations: [
           expect.objectContaining({
             kind: 'access_grant',

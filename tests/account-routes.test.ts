@@ -164,16 +164,23 @@ describe('account routes', () => {
     );
   });
 
-  it('rejects an unknown platform before calling the service', async () => {
-    const response = await app.request('/v1/accounts/bootstrap', {
-      method: 'POST',
-      headers: { ...(await bearer()), 'content-type': 'application/json' },
-      body: JSON.stringify({ ...desktopBody(), platform: 'linux' }),
-    });
+  it.each([
+    { platform: 'linux' },
+    { platform: 'ios', appVariant: 'app_store_ios' },
+    { appVariant: 'app_store_ios' },
+  ])(
+    'rejects an unknown platform or channel before calling the service (%o)',
+    async (change) => {
+      const response = await app.request('/v1/accounts/bootstrap', {
+        method: 'POST',
+        headers: { ...(await bearer()), 'content-type': 'application/json' },
+        body: JSON.stringify({ ...desktopBody(), ...change }),
+      });
 
-    expect(response.status).toBe(422);
-    expect(bootstrapAccount).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(422);
+      expect(bootstrapAccount).not.toHaveBeenCalled();
+    },
+  );
 
   it('lists devices with their platform', async () => {
     listDevices.mockResolvedValueOnce([

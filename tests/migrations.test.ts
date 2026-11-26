@@ -17,23 +17,39 @@ describe('database migrations', () => {
     );
   });
 
-  it('widens the device checks for iPhone without touching the slot functions', async () => {
+  it('narrows the device checks back to Mac and Windows, refusing to run over an iPhone', async () => {
     const migration = await readFile(
-      new URL('../migrations/0031_ios_devices.sql', import.meta.url),
+      new URL('../migrations/0032_remove_ios_devices.sql', import.meta.url),
       'utf8',
     );
 
-    expect(migration).toContain("CHECK (platform IN ('macos', 'windows', 'ios'))");
     expect(migration).toContain(
-      "CHECK (app_variant IN ('direct', 'mas', 'app_store_ios'))",
+      "WHERE platform = 'ios' OR app_variant = 'app_store_ios'",
     );
+    expect(migration).toContain("MESSAGE = 'ios_devices_remain'");
+    expect(migration).toContain("CHECK (platform IN ('macos', 'windows'))");
+    expect(migration).toContain("CHECK (app_variant IN ('direct', 'mas'))");
     expect(migration).toContain(
       'DROP CONSTRAINT IF EXISTS pressay_device_platform_check',
     );
     expect(migration).toContain(
       'DROP CONSTRAINT IF EXISTS pressay_device_app_variant_check',
     );
+    // It never deletes or rewrites a device, and leaves the slot functions alone.
+    expect(migration).not.toMatch(/^\s*(DELETE|UPDATE)\b/im);
     expect(migration).not.toMatch(/CREATE (OR REPLACE )?FUNCTION|DROP FUNCTION/);
+  });
+
+  it('drops the platform waitlist table and nothing else', async () => {
+    const migration = await readFile(
+      new URL('../migrations/0033_drop_waitlist.sql', import.meta.url),
+      'utf8',
+    );
+    const statements = migration
+      .split('\n')
+      .filter((line) => line.trim() && !line.trim().startsWith('--'));
+
+    expect(statements).toEqual(['DROP TABLE IF EXISTS waitlist_entry;']);
   });
 
   it('moves the single owner into members with roles, keeping the old table for running code', async () => {
