@@ -403,8 +403,8 @@ async function applyAppleSubscription(
 }
 
 /**
- * Apple and Stripe can both bill the same account (for example an App Store
- * purchase on a Mac or an iPhone while a web subscription runs). Access is not doubled, but support
+ * Apple and Stripe can both bill the same account (for example a Mac App
+ * Store purchase while a web subscription runs). Access is not doubled, but support
  * must refund one side: flag the event and log a stable code.
  */
 async function flagDuplicateWithStripe(record: AppleSubscriptionRecord): Promise<void> {
