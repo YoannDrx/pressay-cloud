@@ -3,36 +3,28 @@ import { z } from 'zod';
 const uuid = z.uuid();
 const isoDateTime = z.iso.datetime({ offset: true });
 
-/** Platforms that share the account's three Cloud device slots. */
-export const devicePlatformSchema = z.enum(['macos', 'windows', 'ios']);
+/** Desktop platforms that share the account's three Cloud device slots. */
+export const devicePlatformSchema = z.enum(['macos', 'windows']);
 
-/**
- * How the app was distributed: `direct` (site download), `mas` (Mac App Store)
- * or `app_store_ios` (App Store and TestFlight on iPhone).
- */
-export const deviceAppVariantSchema = z.enum(['direct', 'mas', 'app_store_ios']);
+/** How the app was distributed: `direct` (site download) or `mas` (Mac App Store). */
+export const deviceAppVariantSchema = z.enum(['direct', 'mas']);
 
-export const bootstrapAccountRequestSchema = z
-  .strictObject({
-    deviceIdentifier: z
-      .string()
-      .min(16)
-      .max(128)
-      .regex(/^[A-Za-z0-9._:-]+$/),
-    displayName: z.string().trim().min(1).max(120),
-    appVariant: deviceAppVariantSchema,
-    appVersion: z
-      .string()
-      .min(1)
-      .max(64)
-      .regex(/^[0-9A-Za-z.+-]+$/),
-    // Older macOS clients omit the field, so it defaults to macOS.
-    platform: devicePlatformSchema.default('macos'),
-  })
-  .refine(
-    (device) => (device.platform === 'ios') === (device.appVariant === 'app_store_ios'),
-    { message: 'The distribution variant does not match the platform' },
-  );
+export const bootstrapAccountRequestSchema = z.strictObject({
+  deviceIdentifier: z
+    .string()
+    .min(16)
+    .max(128)
+    .regex(/^[A-Za-z0-9._:-]+$/),
+  displayName: z.string().trim().min(1).max(120),
+  appVariant: deviceAppVariantSchema,
+  appVersion: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[0-9A-Za-z.+-]+$/),
+  // Older macOS clients omit the field, so it defaults to macOS.
+  platform: devicePlatformSchema.default('macos'),
+});
 
 export const entitlementSchema = z.strictObject({
   tier: z.enum(['free', 'pro']),

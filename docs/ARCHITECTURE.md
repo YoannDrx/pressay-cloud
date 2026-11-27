@@ -84,10 +84,7 @@ then remove the old public key. Private keys are never stored in GitHub.
 
 ## App Store billing
 
-The Mac App Store and iPhone builds are one universal purchase (same bundle
-identifier, same App Apple ID, same products), so nothing here depends on the
-platform: a purchase on either activates Pro on the account, hence on both. They
-pass the Pressay account UUID as StoreKit's
+The Mac App Store build passes the Pressay account UUID as StoreKit's
 `appAccountToken`. `POST /v1/billing/restore-app-store` accepts a signed
 StoreKit 2 transaction whose token matches the authenticated account; a purchase
 without a token or bound to another token (offer codes, Family Sharing, another
@@ -177,11 +174,11 @@ and the API records that read as `admin.user.identity.read`.
 
 ## Administrators and roles
 
-| Role       | May                                                                                                                              |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `owner`    | Everything: billing (Stripe promotions, webhook replay, referral rewards), launch gates, administrators.                         |
-| `support`  | Every read; support actions (grants, devices, deletions, invitations, sign-out everywhere); waitlist and access-request exports. |
-| `readonly` | Every read except the administrator list and personal-data exports.                                                              |
+| Role       | May                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------- |
+| `owner`    | Everything: billing (Stripe promotions, webhook replay, referral rewards), launch gates, administrators.            |
+| `support`  | Every read; support actions (grants, devices, deletions, invitations, sign-out everywhere); access-request exports. |
+| `readonly` | Every read except the administrator list and personal-data exports.                                                 |
 
 `src/lib/admin-roles.ts` maps each route to its least role: an unlisted
 mutation is owner-only and a test fails until every route is classified. A
@@ -227,7 +224,7 @@ the action: a failed action leaves its key free, a replayed key returns the
 first result without acting twice, and a key reused on another target is
 refused.
 
-A revoked device (Mac, PC or iPhone) is refused at sign-in until it is restored, by its owner
+A revoked device (Mac or PC) is refused at sign-in until it is restored, by its owner
 (`GET /v1/devices?include=revoked`, `POST /v1/devices/:id/restore`) or by
 support, within the shared limit of three active devices.
 
@@ -330,14 +327,11 @@ evaluate it (download sources and campaigns come from public URLs).
 | Retired Cloud sessions and verifications                       | Until expiry                                                                | Daily purge             |
 | Deletion tombstone (`auth_user_id`)                            | Kept to prevent re-attribution                                              | Kept                    |
 | Anonymous download events (`download_event`, no personal data) | Kept as aggregate statistics                                                | Kept                    |
-| Waitlist entries (`waitlist_entry`)                            | 730 days after consent (`PRESSAY_RETENTION_WAITLIST_DAYS`)                  | Daily purge             |
-| Unsubscribed waitlist entries                                  | 30 days after unsubscribing                                                 | Daily purge             |
 | Invitation address (`access_campaign.restricted_email`)        | While the invitation can be redeemed; erased with the account               | Daily purge, deletion   |
 
 `GET /v1/me/export` returns the caller's data as JSON (account, contact,
 devices, entitlement, subscriptions, payments, consents, usage, grants, referral
-data, sync volume, platform waitlists of the verified address) without hashes,
-keys or provider identifiers.
+data, sync volume) without hashes, keys or provider identifiers.
 
 An invitation reserved to an address (`restricted_email`) keeps it only while
 it can be redeemed: the daily purge erases it once the invitation has expired,
@@ -360,22 +354,3 @@ invitations reserved to its address, as an attachment. Each export is written
 to `operations_audit` as `admin.user.export` (reason `data_export`); with
 `?include=identity` the web adds the sign-in data it holds (linked providers,
 passkeys, sessions, Authenticator status) and the entry records it.
-
-## Platform waitlists
-
-`POST /v1/waitlist` (public) records `{email, platform: ios|windows, locale:
-fr|en, source, consent: true}` in `waitlist_entry`: the address, platform,
-language, source and consent time only, never an IP address or user agent.
-The answer is always `202 {"status":"registered"}`, whether the address is
-new, already listed or had unsubscribed (which renews its consent), so the
-route cannot be used to test addresses. Five sign-ups per visitor address and
-minute: the site relays sign-ups from its server and vouches for the visitor's
-address with a five-minute token signed by its Better Auth keys (audience
-`pressay-waitlist`, `token_use: pressay_waitlist`); the address is only hashed
-into a rate-limit bucket. An invalid token is refused.
-
-`GET /v1/admin/waitlist` returns counters per platform (subscribed,
-unsubscribed, per language, last 7 days) and per source.
-`GET /v1/admin/waitlist/export?platform=` returns the subscribed entries of a
-platform as CSV (formula prefixes neutralised) after a step-up, audited as
-`admin.waitlist.export`. Unsubscription arrives with transactional email.

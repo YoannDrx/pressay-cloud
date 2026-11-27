@@ -12,7 +12,6 @@ const SEGMENT = '[^/]+';
 const restrictedReads: [RegExp, OperationsRole][] = [
   [/\/admin\/members\/?$/, 'owner'],
   [new RegExp(`/admin/users/${SEGMENT}/export/?$`), 'support'],
-  [/\/admin\/waitlist\/export\/?$/, 'support'],
 ];
 /**
  * Support actions: customer help without billing or roles. Campaign routes

@@ -210,7 +210,6 @@ export const adminUsersSchema = z.object({
       active_device_count: integer.nonnegative(),
       macos_device_count: integer.nonnegative(),
       windows_device_count: integer.nonnegative(),
-      ios_device_count: integer.nonnegative(),
       last_device_seen_at: nullableDate,
     }),
   ),
@@ -314,14 +313,6 @@ export const adminMetricsSchema = z.object({
   ),
   signups: z.array(z.object({ day: z.iso.date(), count: integer })),
   activeAccounts: z.object({ active_7d: integer, active_30d: integer }),
-  devicesByPlatform: z.array(
-    z.object({
-      platform: devicePlatformSchema,
-      active: integer,
-      seen_7d: integer,
-      seen_30d: integer,
-    }),
-  ),
   grants: z.array(z.object({ source: z.string(), count: integer })),
   collectedThisMonth: z.array(
     z.object({

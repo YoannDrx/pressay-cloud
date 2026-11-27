@@ -51,7 +51,6 @@ export interface AdminUser {
   active_device_count: number;
   macos_device_count?: number;
   windows_device_count?: number;
-  ios_device_count?: number;
   last_device_seen_at: string | null;
 }
 export interface AdminUsers {
@@ -59,12 +58,12 @@ export interface AdminUsers {
   nextCursor: string | null;
   searchKind?: AdminUserSearchKind;
 }
-export type DevicePlatform = 'macos' | 'windows' | 'ios';
+export type DevicePlatform = 'macos' | 'windows';
 export interface AdminDevice {
   id: string;
   displayName: string;
   platform?: DevicePlatform;
-  appVariant: 'direct' | 'mas' | 'app_store_ios';
+  appVariant: 'direct' | 'mas';
   appVersion: string;
   approved?: boolean;
   lastSeenAt: string;
@@ -305,13 +304,6 @@ export interface AdminMetrics {
   }[];
   signups: { day: string; count: number }[];
   activeAccounts: { active_7d: number; active_30d: number };
-  /** Active devices per platform; absent on a Cloud older than the iPhone release. */
-  devicesByPlatform?: {
-    platform: DevicePlatform;
-    active: number;
-    seen_7d: number;
-    seen_30d: number;
-  }[];
   grants: { source: string; count: number }[];
   collectedThisMonth: {
     currency: string;

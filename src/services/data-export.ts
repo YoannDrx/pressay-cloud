@@ -6,8 +6,7 @@ import { AUDIT_READ_REASONS } from './retention.js';
 
 /**
  * Machine-readable copy of the personal data Cloud holds for the caller
- * (GDPR art. 15 and 20), including the platform waitlists joined with the
- * account's verified address. Hashes, keys, encrypted payloads and provider
+ * (GDPR art. 15 and 20). Hashes, keys, encrypted payloads and provider
  * identifiers are omitted: they are not readable data about the person and
  * some are security material. Sync content is end-to-end encrypted, so only
  * its volume is reported; the desktop app holds the readable copy.
@@ -174,19 +173,7 @@ async function accountExport(
       ),
       'encryptedSyncChanges', (
         SELECT count(*)::integer FROM sync_change WHERE account_id = account.id
-      ),
-      'waitlists', COALESCE((
-        SELECT json_agg(json_build_object(
-          'platform', waitlist.platform,
-          'locale', waitlist.locale,
-          'source', waitlist.source,
-          'consentAt', waitlist.consent_at,
-          'unsubscribedAt', waitlist.unsubscribed_at
-        ) ORDER BY waitlist.created_at)
-        FROM waitlist_entry waitlist
-        JOIN account_contact contact ON contact.account_id = account.id
-        WHERE waitlist.email = lower(contact.email)
-      ), '[]'::json)
+      )
     ) AS export
     FROM pressay_account account
     WHERE ${where}`,

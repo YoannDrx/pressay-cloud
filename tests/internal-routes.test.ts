@@ -39,7 +39,6 @@ describe('internal operational routes', () => {
       providerEvents: 1,
       legacySessions: 0,
       legacyVerifications: 0,
-      waitlistEntries: 0,
     });
   });
 
@@ -67,7 +66,6 @@ describe('internal operational routes', () => {
         providerEvents: 1,
         legacySessions: 0,
         legacyVerifications: 0,
-        waitlistEntries: 0,
       },
     });
     expect(runAccountDeletionBatch).toHaveBeenCalledWith(500, {

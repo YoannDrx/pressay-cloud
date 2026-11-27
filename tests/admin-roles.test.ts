@@ -20,8 +20,6 @@ const expected: Record<string, 'owner' | 'support' | 'readonly'> = {
   'GET /admin/billing/events': 'readonly',
   'GET /admin/billing/financial-events': 'readonly',
   'GET /admin/audit-log': 'readonly',
-  'GET /admin/waitlist': 'readonly',
-  'GET /admin/waitlist/export': 'support',
   'GET /admin/members': 'owner',
   'POST /admin/members': 'owner',
   'POST /admin/members/:id/role': 'owner',
